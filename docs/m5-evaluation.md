@@ -7,11 +7,11 @@ Buildroot Linux 5.10.160, glibc 2.36, 480x960 DSI panel.
 
 ## Decision
 
-**Conditional GO** for continuing LVGL as a native UI platform on this exact
-device profile. Display, touch, interaction, visual quality, memory use, and
-Falcon recovery are all viable. This is not yet a GO for replacing Falcon in a
-shippable product because proprietary dictionary-pen services and a final
-five-minute evidence pull remain separate gates.
+**GO** for continuing LVGL as a native UI platform on this exact device
+profile. Display, touch, interaction, visual quality, sustained performance,
+memory use, and Falcon recovery are all viable. This is not yet a GO for
+replacing Falcon in a shippable product because proprietary dictionary-pen
+services remain a separate integration gate.
 
 ## Validation Matrix
 
@@ -21,12 +21,12 @@ five-minute evidence pull remain separate gates.
 | DRM display and orientation | Pass | Connected `DSI-1`, 480x960 mode, double dumb buffers, page flips, and the 960x266 rotated logical canvas rendered correctly. |
 | Touch mapping and controls | Pass | `hyn_ts` discovery plus 73 automated input updates exercised navigation, tap, long press, slider, scrolling, and drag paths. |
 | Visual features | Pass | Chinese subset glyphs, English text, PNG alpha, opacity, rounded corners, gradients, and local animation rendered correctly in `test-results/visual/visual-final.png`. |
-| Animation performance | Pass | The 30-second interaction run produced 1,276 frames (42.5 FPS overall), 11.59 ms average render/submit time, and 21.02 ms peak. The final visual workload stayed around 39-43 FPS overall/sample. Acceptance floor is 30 FPS. |
-| Memory | Pass | Peak RSS was about 8.1-8.6 MB across recorded runs, well below the 40 MB limit. |
-| CPU | Acceptable with optimization work | Continuous software rendering was typically 25-60% of one CPU core, with short PNG/page transitions reaching about 63% of one core. This is moderate, not negligible, and should be reduced by stopping animations off-screen and lowering idle refresh work. |
+| Animation performance | Pass | The final 300.013-second run produced 12,185 frames (40.6 FPS overall), 14.97 ms average render/submit time, and 29.80 ms peak. The captured frame showed 37.7 FPS. Acceptance floor is 30 FPS. |
+| Memory | Pass | RSS stayed at 8,276 KB for all 300 recorded samples, well below the 40 MB limit. |
+| CPU | Acceptable with optimization work | Continuous software rendering averaged 43.1% of one CPU core across the final run, with a 62.7% peak. This is moderate, not negligible, and should be reduced by stopping animations off-screen and lowering idle refresh work. |
 | Fault and timeout recovery | Pass | Injected exit code 42 and a wrapper timeout both restored the Falcon guardian and `/usr/bin/miniapp`. |
 | Repeated handoff | Pass | Five consecutive Falcon -> LVGL -> Falcon cycles completed, each with a stable restored miniapp. |
-| Five-minute continuous run | Pending evidence pull | The run began and remained stable through the last observed sample, but the host lost the physical USB device. The device-side wrapper is independent of ADB; completion and restored process state must still be pulled and verified before changing this row to Pass. |
+| Five-minute continuous run | Pass | `scripts/run_m5.ps1` completed with `runtime_s=300.013`, `result=0`, 12,185 frames, stable 8,276 KB RSS, a valid PPM capture, and restored Falcon guardian, `runDictPen`, and `/usr/bin/miniapp` processes. |
 | Persistent mutation | Pass | PoC executable, image, wrapper, PID, and logs use `/tmp`; no boot, partition, installed mini-app, or user-data change was introduced. |
 
 ## Performance Impact
@@ -67,17 +67,18 @@ are the primary schedule risk.
 
 ## Conditions for Product Development
 
-1. Complete and archive a passing 300-second run using `scripts/run_m5.ps1`, including the restored Falcon process tree.
-2. Replace the temporary 107-glyph font generated from a workstation font with an explicitly redistributable Noto Sans CJK or Source Han subset, and record its license.
-3. Turn the device profile into a versioned input and add host tests for coordinate boundaries, DRM selection, metrics, and guardian selection.
-4. Add an idle policy, animation suspension, decoded-image caching, and page-level CPU budgets.
-5. Define a supported bridge for each required proprietary service before committing to a full application rewrite.
-6. Keep recovery device-side and temporary until repeated power-loss, crash, and upgrade testing establishes a production launcher design.
+1. Replace the temporary 107-glyph font generated from a workstation font with an explicitly redistributable Noto Sans CJK or Source Han subset, and record its license.
+2. Turn the device profile into a versioned input and add host tests for coordinate boundaries, DRM selection, metrics, and guardian selection.
+3. Add an idle policy, animation suspension, decoded-image caching, and page-level CPU budgets.
+4. Define a supported bridge for each required proprietary service before committing to a full application rewrite.
+5. Keep recovery device-side and temporary until repeated power-loss, crash, and upgrade testing establishes a production launcher design.
 
 ## Current Artifact
 
 - LVGL: 9.5.0
 - Binary: `build/m5/lvgl_poc`
-- Size: 1,282,608 bytes
-- SHA-256: `8834953f0477a203192988e9b14e07f54c8790557e714169a1672e9df5aa85ed`
+- Size: 1,282,672 bytes
+- SHA-256: `3fdae21f0197e3771c41e36a94d6d1788e00deb8a1e80fc7f2b9de9730a9d8cd`
+- M5 log: `test-results/m5/five-minute-wrapper.log`
+- M5 capture SHA-256: `f9b2e07b63d06aa1d8bed088a7fd6d7705c657d10e217e7ac6618440893f43b4`
 - No embedded build-host RPATH

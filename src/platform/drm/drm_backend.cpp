@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -27,6 +28,7 @@ struct Buffer {
 };
 
 constexpr uint32_t kPageFlipFlags = DRM_MODE_PAGE_FLIP_EVENT;
+constexpr unsigned int kMaxPageFlipRecoveries = 1;
 
 const char* connector_type_name(uint32_t type)
 {
@@ -60,6 +62,7 @@ struct DrmBackend::Impl {
     int active_buffer {-1};
     bool flip_pending {false};
     bool modeset_done {false};
+    unsigned int page_flip_recoveries {};
     std::string error;
 
     bool fail(const char* operation)
@@ -261,7 +264,20 @@ bool DrmBackend::present_logical(const uint32_t* pixels, int32_t width, int32_t 
 
     impl_->flip_pending = true;
     if(drmModePageFlip(impl_->fd, impl_->crtc_id, buffer.framebuffer, kPageFlipFlags, &impl_->flip_pending) != 0) {
+        const int page_flip_errno = errno;
         impl_->flip_pending = false;
+        if(page_flip_errno == EINVAL && impl_->page_flip_recoveries < kMaxPageFlipRecoveries) {
+            if(drmModeSetCrtc(impl_->fd, impl_->crtc_id, buffer.framebuffer, 0, 0,
+                              &impl_->connector_id, 1, &impl_->mode) == 0) {
+                ++impl_->page_flip_recoveries;
+                impl_->active_buffer = next;
+                std::fprintf(stderr, "POC warn=page_flip_recovered errno=%d count=%u\n",
+                             page_flip_errno, impl_->page_flip_recoveries);
+                return true;
+            }
+            return impl_->fail("drmModeSetCrtc recovery");
+        }
+        errno = page_flip_errno;
         return impl_->fail("drmModePageFlip");
     }
     if(!impl_->wait_for_flip()) return false;
@@ -286,6 +302,7 @@ void DrmBackend::close()
     impl_->fd = -1;
     impl_->active_buffer = -1;
     impl_->modeset_done = false;
+    impl_->page_flip_recoveries = 0;
 }
 
 bool DrmBackend::is_open() const

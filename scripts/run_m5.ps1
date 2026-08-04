@@ -17,9 +17,11 @@ $RemoteApp = "/tmp/lvgl_poc"
 $RemoteWrapper = "/tmp/device_run_poc.sh"
 $RemoteLogo = "/tmp/lvgl-poc-logo.png"
 $RemoteLog = "/tmp/lvgl-poc-wrapper.log"
+$RemoteCapture = "/tmp/lvgl-poc-m5.ppm"
 $ResultDirectory = Join-Path $ProjectRoot "test-results/m5"
 $ResultLog = Join-Path $ResultDirectory "five-minute-wrapper.log"
 $ProcessLog = Join-Path $ResultDirectory "falcon-processes.log"
+$ResultCapture = Join-Path $ResultDirectory "five-minute.ppm"
 
 function Invoke-Adb {
     param([Parameter(Mandatory)][string[]]$Arguments)
@@ -59,12 +61,13 @@ if (-not $CollectOnly) {
         }
     }
 
+    Invoke-Adb -Arguments @("shell", "rm -f $RemoteCapture")
     Invoke-Adb -Arguments @("push", $AppPath, $RemoteApp)
     Invoke-Adb -Arguments @("push", $WrapperPath, $RemoteWrapper)
     Invoke-Adb -Arguments @("push", $LogoPath, $RemoteLogo)
     Invoke-Adb -Arguments @("shell", "chmod 755 $RemoteApp $RemoteWrapper")
 
-    & $Adb shell "POC_RUN_SECONDS=$RunSeconds $RemoteWrapper $RemoteApp $WrapperLimitSeconds"
+    & $Adb shell "POC_RUN_SECONDS=$RunSeconds POC_CAPTURE_PATH=$RemoteCapture POC_CAPTURE_FRAME=180 $RemoteWrapper $RemoteApp $WrapperLimitSeconds"
     $runExit = $LASTEXITCODE
     if ($runExit -ne 0) {
         Write-Warning "Device run returned $runExit; attempting evidence collection"
@@ -73,6 +76,7 @@ if (-not $CollectOnly) {
 }
 
 Invoke-Adb -Arguments @("pull", $RemoteLog, $ResultLog)
+Invoke-Adb -Arguments @("pull", $RemoteCapture, $ResultCapture)
 $processOutput = & $Adb shell "ps | grep -E 'guardian_run.*/usr/bin/runDictPen|/usr/bin/runDictPen|/usr/bin/miniapp'"
 if ($LASTEXITCODE -ne 0) {
     throw "Unable to read Falcon process state"
@@ -108,3 +112,4 @@ if (($processOutput -join "`n") -notmatch "guardian_run.*/usr/bin/runDictPen") {
 Write-Output "M5_PASS runtime_s=$runtime"
 Write-Output "wrapper_log=$ResultLog"
 Write-Output "process_log=$ProcessLog"
+Write-Output "capture=$ResultCapture"
