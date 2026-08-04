@@ -1,0 +1,26 @@
+/build/
+/test-results/
+/device-sysroot/
+*.log
+
+# The vendored LVGL build uses the root build files and src/. Keep upstream
+# demos, generated reference images, docs, and development tooling out of this
+# focused hardware PoC.
+/third_party/lvgl/.devcontainer/
+/third_party/lvgl/.github/
+/third_party/lvgl/demos/
+/third_party/lvgl/docs/
+/third_party/lvgl/env_support/*
+!/third_party/lvgl/env_support/cmake/
+/third_party/lvgl/examples/
+/third_party/lvgl/libs/
+/third_party/lvgl/scripts/
+/third_party/lvgl/tests/
+/third_party/lvgl/zephyr/
+/third_party/libdrm/*
+!/third_party/libdrm/include/
+!/third_party/libdrm/include/drm/
+!/third_party/libdrm/include/drm/**
+!/third_party/libdrm/meson.build
+!/third_party/libdrm/xf86drm.h
+!/third_party/libdrm/xf86drmMode.h
