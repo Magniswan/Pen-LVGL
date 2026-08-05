@@ -1,0 +1,24 @@
+{
+  "name": "lvgl-launcher",
+  "appName": "LVGL \u5E94\u7528",
+  "appid": "8080992608050001",
+  "version": "0.1.0",
+  "description": "Falcon entry point for the standalone LVGL application",
+  "icon": "app_icon.png",
+  "quickjs": {
+    "version": "20200705",
+    "bigNum": false
+  },
+  "single-js-bundle": false,
+  "scripts": {
+    "build": "aiot-cli -p",
+    "build:dev": "aiot-cli",
+    "build:prod": "aiot-cli -c -q -p"
+  },
+  "dependencies": {
+    "falcon-ui": "1.0.3"
+  },
+  "devDependencies": {
+    "aiot-vue-cli": "1.0.32"
+  }
+}

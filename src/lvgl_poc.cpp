@@ -135,7 +135,7 @@ int main()
     std::signal(SIGTERM, signal_handler);
     std::signal(SIGHUP, signal_handler);
 
-    const int run_seconds = std::max(1, env_integer("POC_RUN_SECONDS", 300));
+    const int run_seconds = std::max(0, env_integer("POC_RUN_SECONDS", 300));
     const int fail_after = env_integer("POC_FAIL_AFTER", 0);
     dictpen::DeviceProfile profile = dictpen::y01_profile();
     if(const char* touch_name = std::getenv("POC_TOUCH_NAME")) profile.touch_name = touch_name;
@@ -215,7 +215,7 @@ int main()
             result = 42;
             break;
         }
-        if(elapsed >= run_seconds) break;
+        if(run_seconds > 0 && elapsed >= run_seconds) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 

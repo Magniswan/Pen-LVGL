@@ -1,0 +1,6 @@
+allowBuilds:
+  es5-ext: true
+  uglifyjs-webpack-plugin: true
+onlyBuiltDependencies:
+  - es5-ext
+  - uglifyjs-webpack-plugin

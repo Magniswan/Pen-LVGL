@@ -2,6 +2,11 @@
 /test-results/
 /device-sysroot/
 *.log
+/launcher/node_modules/
+/launcher/.falcon_/
+/launcher/.falcon_tmp/
+/launcher/*.amr
+/launcher/libs/**/*.so
 
 # The vendored LVGL build uses the root build files and src/. Keep upstream
 # demos, generated reference images, docs, and development tooling out of this
