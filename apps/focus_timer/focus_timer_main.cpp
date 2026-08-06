@@ -1,4 +1,4 @@
-#include "app/poc_ui.h"
+#include "focus_timer/focus_timer_ui.h"
 #include "runtime/platform_runtime.h"
 #include "shell/app_shell.h"
 
@@ -6,20 +6,20 @@
 
 namespace {
 
-class PocApplication final : public dictpen::RuntimeApplication {
+class FocusTimerApplication final : public dictpen::RuntimeApplication {
 public:
     void create(dictpen::RuntimeContext& context) override
     {
-        ui_ = std::make_unique<dictpen::PocUi>(context.metrics);
+        ui_ = std::make_unique<dictpen::FocusTimerUi>();
         ui_->create();
         shell_ = std::make_unique<dictpen::AppShell>(
-            context.control, dictpen::AppShellConfig {"LVGL 体验", false});
+            context.control, dictpen::AppShellConfig {"专注计时", false});
         shell_->create();
     }
 
     bool stop_requested() const override
     {
-        return (ui_ && ui_->exit_requested()) || (shell_ && shell_->stop_requested());
+        return shell_ && shell_->stop_requested();
     }
 
     void destroy() override
@@ -29,7 +29,7 @@ public:
     }
 
 private:
-    std::unique_ptr<dictpen::PocUi> ui_;
+    std::unique_ptr<dictpen::FocusTimerUi> ui_;
     std::unique_ptr<dictpen::AppShell> shell_;
 };
 
@@ -37,12 +37,8 @@ private:
 
 int main()
 {
-    PocApplication application;
+    FocusTimerApplication application;
     dictpen::PlatformRuntimeOptions options;
-    options.app_id = "poc";
-    options.run_seconds_env = "POC_RUN_SECONDS";
-    options.default_run_seconds = 300;
-    options.fail_after_env = "POC_FAIL_AFTER";
-    options.log_metrics = true;
+    options.app_id = "focus_timer";
     return dictpen::run_platform_application(application, options);
 }

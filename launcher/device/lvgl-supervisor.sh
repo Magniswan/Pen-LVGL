@@ -15,7 +15,10 @@ if [ "$TEST_MODE" = "1" ]; then
     PROC_ROOT=${LVGL_TEST_PROC_ROOT:?LVGL_TEST_PROC_ROOT is required in test mode}
 fi
 
-APP=$APP_ROOT/bin/lvgl_poc
+SESSION=$APP_ROOT/bin/lvgl_session
+LVGL_LAUNCHER=$APP_ROOT/bin/lvgl_launcher
+LVGL_POC=$APP_ROOT/bin/lvgl_poc
+FOCUS_TIMER=$APP_ROOT/bin/focus_timer
 ASSET=$APP_ROOT/assets/poc_badge.png
 MANIFEST=$APP_ROOT/manifest.env
 LOCK_DIR=$RUN_ROOT/lock
@@ -123,26 +126,37 @@ stop_pid() {
 
 validate_release() {
     [ -f "$MANIFEST" ] || { log "error=manifest_missing path=$MANIFEST"; return 1; }
-    [ -x "$APP" ] || { log "error=app_not_executable path=$APP"; return 1; }
     [ -f "$ASSET" ] || { log "error=asset_missing path=$ASSET"; return 1; }
 
     manifest_profile=$(sed -n 's/^PROFILE_ID=//p' "$MANIFEST" | head -n 1 | tr -d '\r')
-    expected_hash=$(sed -n 's/^LVGL_SHA256=//p' "$MANIFEST" | head -n 1 | tr -d '\r')
     [ "$manifest_profile" = "$PROFILE_ID" ] || {
         log "error=profile_mismatch expected=$PROFILE_ID actual=${manifest_profile:-missing}"
         return 1
     }
+    validate_binary SESSION_SHA256 "$SESSION" || return 1
+    validate_binary LAUNCHER_SHA256 "$LVGL_LAUNCHER" || return 1
+    validate_binary POC_SHA256 "$LVGL_POC" || return 1
+    validate_binary FOCUS_TIMER_SHA256 "$FOCUS_TIMER" || return 1
+}
+
+validate_binary() {
+    key=$1
+    path=$2
+    [ -x "$path" ] || { log "error=binary_not_executable key=$key path=$path"; return 1; }
+    expected_hash=$(sed -n "s/^$key=//p" "$MANIFEST" | head -n 1 | tr -d '\r')
     case "$expected_hash" in
-        ''|*[!0-9a-fA-F]*) log "error=manifest_hash_invalid"; return 1;;
+        ''|*[!0-9a-fA-F]*) log "error=manifest_hash_invalid key=$key"; return 1;;
     esac
-    [ "${#expected_hash}" -eq 64 ] || { log "error=manifest_hash_length"; return 1; }
-    if [ "$TEST_MODE" != "1" ]; then
-        actual_hash=$(sha256sum "$APP" | awk '{print $1}')
-        [ "$actual_hash" = "$expected_hash" ] || {
-            log "error=app_hash_mismatch expected=$expected_hash actual=$actual_hash"
-            return 1
-        }
-    fi
+    [ "${#expected_hash}" -eq 64 ] || {
+        log "error=manifest_hash_length key=$key"
+        return 1
+    }
+    [ "$TEST_MODE" = "1" ] && return 0
+    actual_hash=$(sha256sum "$path" | awk '{print $1}')
+    [ "$actual_hash" = "$expected_hash" ] || {
+        log "error=binary_hash_mismatch key=$key expected=$expected_hash actual=$actual_hash"
+        return 1
+    }
 }
 
 acquire_lock() {
@@ -260,14 +274,14 @@ stop_falcon || { FINAL_CODE=69; exit "$FINAL_CODE"; }
 
 write_state running 0
 if [ "$TEST_MODE" = "1" ]; then
-    "$APP" >> "$LOG_FILE" 2>&1 &
+    "$SESSION" --bin-dir "$APP_ROOT/bin" >> "$LOG_FILE" 2>&1 &
 else
     cp "$ASSET" /tmp/lvgl-poc-logo.png
-    POC_RUN_SECONDS=0 "$APP" >> "$LOG_FILE" 2>&1 &
+    "$SESSION" --bin-dir "$APP_ROOT/bin" >> "$LOG_FILE" 2>&1 &
 fi
 APP_PID=$!
 write_state running 0
-log "lvgl started pid=$APP_PID"
+log "lvgl session started pid=$APP_PID"
 
 set +e
 wait "$APP_PID"
@@ -279,5 +293,5 @@ if [ "$FINAL_CODE" -eq 0 ]; then
 else
     FINAL_STATE=error
 fi
-log "lvgl exit code=$FINAL_CODE"
+log "lvgl session exit code=$FINAL_CODE"
 exit "$FINAL_CODE"

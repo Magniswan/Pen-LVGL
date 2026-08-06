@@ -1,10 +1,11 @@
 # LVGL Dictionary Pen PoC
 
-Standalone LVGL 9.5.0 application and Falcon launcher for the probed Youdao
-Y01 dictionary-pen firmware. A Falcon mini-app provides the desktop entry
-point, then a device-side supervisor hands the DRM display and `hyn_ts` touch
-device to the native AArch64 process. Falcon is restored after a normal exit,
-application failure, or supervisor signal.
+Standalone LVGL 9.5.0 multi-app session and Falcon launcher for the probed
+Youdao Y01 dictionary-pen firmware. A Falcon mini-app provides the desktop
+entry point, then a device-side supervisor hands the DRM display and `hyn_ts`
+touch device to a native AArch64 session. The session starts a paged LVGL
+launcher, the hardware PoC, or the focus timer one at a time. Falcon is
+restored after a normal exit, application failure, or supervisor signal.
 
 This repository is a hardware evaluation, not a general Falcon replacement.
 The current profile is limited to `OVERHEAD_Y01_SKU_CHN_PRO`, firmware 4.8.6.
@@ -13,6 +14,8 @@ The current profile is limited to `OVERHEAD_Y01_SKU_CHN_PRO`, firmware 4.8.6.
 
 - DRM/KMS connector and primary-plane discovery
 - rotated 960x266 logical canvas on the 480x960 DSI panel
+- paged LVGL launcher with the interaction PoC and focus timer applications
+- shared pull-down status panel in every in-house LVGL app
 - double-buffered page flips and dirty-region rendering
 - evdev touch discovery and coordinate conversion
 - interaction, visual, and diagnostics pages
@@ -44,11 +47,12 @@ contain the device `libdrm.so.2` at `device-sysroot/usr/lib/`.
 cmake -S . -B build/m5 -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-aarch64.cmake
-cmake --build build/m5 --target lvgl_poc -j4
+cmake --build build/m5 --target lvgl_session lvgl_launcher lvgl_poc focus_timer -j4
 ```
 
-The final executable is `build/m5/lvgl_poc`. It is dynamically linked only to
-libraries present in the profiled firmware and does not contain a development
+The final executables are `build/m5/lvgl_session`, `build/m5/lvgl_launcher`,
+`build/m5/lvgl_poc`, and `build/m5/focus_timer`. They are dynamically linked only to
+libraries present in the profiled firmware and do not contain a development
 host RPATH.
 
 ## M5 Device Run

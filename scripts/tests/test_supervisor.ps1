@@ -45,14 +45,23 @@ Set-Content -Encoding ascii -NoNewline -LiteralPath (Join-Path $ProcRoot "103/ex
 $Manifest = @"
 PROFILE_ID=OVERHEAD_Y01_SKU_CHN_PRO
 VERSION=test
-LVGL_SHA256=$('0' * 64)
+SESSION_SHA256=$('0' * 64)
+LAUNCHER_SHA256=$('0' * 64)
+POC_SHA256=$('0' * 64)
+FOCUS_TIMER_SHA256=$('0' * 64)
 "@
 Set-Content -Encoding ascii -LiteralPath (Join-Path $AppRoot "manifest.env") -Value $Manifest
 Set-Content -Encoding ascii -LiteralPath (Join-Path $AppRoot "assets/poc_badge.png") -Value "fixture"
-Set-Content -Encoding ascii -LiteralPath (Join-Path $AppRoot "bin/lvgl_poc") -Value @"
+Set-Content -Encoding ascii -LiteralPath (Join-Path $AppRoot "bin/lvgl_session") -Value @"
 #!/bin/sh
 exit `${LVGL_TEST_APP_EXIT:-0}
 "@
+foreach ($name in @("lvgl_launcher", "lvgl_poc", "focus_timer")) {
+    Set-Content -Encoding ascii -LiteralPath (Join-Path $AppRoot "bin/$name") -Value @"
+#!/bin/sh
+exit 0
+"@
+}
 
 function ConvertTo-WslPath {
     param([Parameter(Mandatory)][string]$Path)
@@ -68,7 +77,7 @@ $WslApp = ConvertTo-WslPath $AppRoot
 $WslRun = ConvertTo-WslPath $RunRoot
 $WslLog = ConvertTo-WslPath $LogRoot
 $WslProc = ConvertTo-WslPath $ProcRoot
-& wsl.exe -d Ubuntu -- chmod 755 "$WslApp/bin/lvgl_poc" $Supervisor
+& wsl.exe -d Ubuntu -- chmod 755 "$WslApp/bin/lvgl_session" "$WslApp/bin/lvgl_launcher" "$WslApp/bin/lvgl_poc" "$WslApp/bin/focus_timer" $Supervisor
 if ($LASTEXITCODE -ne 0) { throw "chmod failed" }
 
 $Common = @(

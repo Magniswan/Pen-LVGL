@@ -61,7 +61,7 @@ export default {
         const probe = await probeLauncher();
         if (!this.pageActive || generation !== this.generation) return;
         if (!probe.available) throw new Error(probe.message || '设备组件不可用');
-        this.detail = '正在切换显示与触控';
+        this.detail = '正在切换显示与触摸';
         const result = await startLauncher();
         if (!this.pageActive || generation !== this.generation) return;
         if (result.accepted) {
@@ -69,7 +69,7 @@ export default {
           this.detail = '启动请求已接受';
         } else if (result.state === 'already_running') {
           this.phase = 'launching';
-          this.detail = 'LVGL 已经在运行';
+          this.detail = 'LVGL 已在运行';
         } else {
           throw new Error(result.message || '启动请求被拒绝');
         }
@@ -113,29 +113,20 @@ export default {
   align-items: center;
 }
 
-.status-ready {
+.status-ready,
+.status-error {
   width: 92px;
   height: 92px;
   align-items: center;
   justify-content: center;
-  background-color: #00a390;
   border-top-left-radius: 6px;
   border-top-right-radius: 6px;
   border-bottom-left-radius: 6px;
   border-bottom-right-radius: 6px;
 }
 
-.status-error {
-  width: 92px;
-  height: 92px;
-  align-items: center;
-  justify-content: center;
-  background-color: #ef6253;
-  border-top-left-radius: 6px;
-  border-top-right-radius: 6px;
-  border-bottom-left-radius: 6px;
-  border-bottom-right-radius: 6px;
-}
+.status-ready { background-color: #00a390; }
+.status-error { background-color: #ef6253; }
 
 .status-symbol {
   color: #ffffff;

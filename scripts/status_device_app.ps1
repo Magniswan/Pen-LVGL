@@ -14,7 +14,7 @@ $profile = Assert-TargetDevice
 $installed = Get-InstalledManifest
 $current = Get-DeviceText -Command "readlink '$DeviceRoot/current' 2>/dev/null || true"
 $state = Get-DeviceState
-$processes = Get-DeviceText -Command "ps | grep -E 'lvgl-supervisor|lvgl_poc|guardian_run.*/usr/bin/runDictPen|/usr/bin/miniapp' | grep -v grep"
+$processes = Get-DeviceText -Command "ps | grep -E 'lvgl-supervisor|lvgl_session|lvgl_launcher|lvgl_poc|focus_timer|guardian_run.*/usr/bin/runDictPen|/usr/bin/miniapp' | grep -v grep"
 
 Write-Output "profile=$($profile.Profile) firmware=$($profile.Firmware) pcba=$($profile.Pcba)"
 Write-Output "launcher_installed=$($null -ne $installed) appid=$DeviceAppId"

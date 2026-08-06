@@ -21,6 +21,40 @@ add_library(device_profile STATIC
 target_include_directories(device_profile PUBLIC src)
 target_compile_options(device_profile PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
+add_library(app_registry STATIC
+    src/session/app_registry.cpp
+)
+target_include_directories(app_registry PUBLIC src)
+target_compile_options(app_registry PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_library(session_protocol STATIC
+    src/session/session_protocol.cpp
+)
+target_include_directories(session_protocol PUBLIC src)
+target_link_libraries(session_protocol PUBLIC app_registry)
+target_compile_options(session_protocol PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_library(app_control STATIC
+    src/runtime/app_control.cpp
+)
+target_include_directories(app_control PUBLIC src)
+target_link_libraries(app_control PUBLIC session_protocol)
+target_compile_options(app_control PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_library(app_shell STATIC
+    src/shell/app_theme.cpp
+    src/shell/app_shell.cpp
+)
+target_include_directories(app_shell PUBLIC src)
+target_link_libraries(app_shell PUBLIC app_control lvgl::lvgl)
+target_compile_options(app_shell PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_executable(lvgl_session
+    src/session/session_main.cpp
+)
+target_link_libraries(lvgl_session PRIVATE session_protocol app_registry)
+target_compile_options(lvgl_session PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
 add_executable(dictpen_probe
     src/probe_main.cpp
 )
@@ -78,28 +112,77 @@ if(EXISTS "${DEVICE_LIBDRM_PATH}")
     target_link_libraries(drm_color_test PRIVATE device_profile device_libdrm)
     target_compile_options(drm_color_test PRIVATE -Wall -Wextra -Wpedantic -Werror -Wno-pedantic)
 
-    add_executable(lvgl_poc
-        src/lvgl_poc.cpp
-        src/app/poc_ui.cpp
-        src/assets/lv_font_poc_16.c
+    add_library(platform_runtime STATIC
+        src/runtime/platform_runtime.cpp
         src/diagnostics/runtime_metrics.cpp
         src/platform/drm/drm_backend.cpp
         src/platform/input/input_backend.cpp
     )
-    target_include_directories(lvgl_poc PRIVATE
+    target_include_directories(platform_runtime PUBLIC
         src
         third_party/libdrm
         third_party/libdrm/include
         third_party/libdrm/include/drm
     )
-    target_link_libraries(lvgl_poc PRIVATE
+    target_link_libraries(platform_runtime PUBLIC
         device_profile
         device_libdrm
         lvgl::lvgl
+        app_control
+    )
+    target_compile_options(platform_runtime PRIVATE
+        -Wall -Wextra -Wpedantic -Werror -Wno-pedantic
+    )
+
+    add_executable(lvgl_poc
+        src/lvgl_poc.cpp
+        src/app/poc_ui.cpp
+        src/assets/lv_font_poc_16.c
+    )
+    target_include_directories(lvgl_poc PRIVATE src)
+    target_link_libraries(lvgl_poc PRIVATE
+        platform_runtime
+        app_shell
     )
     target_compile_options(lvgl_poc PRIVATE
         -Wall -Wextra -Wpedantic -Werror -Wno-pedantic
     )
 
-    install(TARGETS drm_probe drm_color_test lvgl_poc RUNTIME DESTINATION bin)
+    add_executable(lvgl_launcher
+        apps/launcher/launcher_main.cpp
+        apps/launcher/launcher_ui.cpp
+    )
+    target_include_directories(lvgl_launcher PRIVATE src apps)
+    target_link_libraries(lvgl_launcher PRIVATE
+        platform_runtime
+        app_shell
+        app_registry
+    )
+    target_compile_options(lvgl_launcher PRIVATE
+        -Wall -Wextra -Wpedantic -Werror -Wno-pedantic
+    )
+
+    add_executable(focus_timer
+        apps/focus_timer/focus_timer_main.cpp
+        apps/focus_timer/focus_timer_model.cpp
+        apps/focus_timer/focus_timer_ui.cpp
+    )
+    target_include_directories(focus_timer PRIVATE src apps)
+    target_link_libraries(focus_timer PRIVATE
+        platform_runtime
+        app_shell
+    )
+    target_compile_options(focus_timer PRIVATE
+        -Wall -Wextra -Wpedantic -Werror -Wno-pedantic
+    )
+
+    install(TARGETS
+        drm_probe
+        drm_color_test
+        lvgl_session
+        lvgl_launcher
+        lvgl_poc
+        focus_timer
+        RUNTIME DESTINATION bin
+    )
 endif()
