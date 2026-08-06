@@ -44,6 +44,7 @@ target_compile_options(app_control PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_library(app_shell STATIC
     src/shell/app_theme.cpp
     src/shell/app_shell.cpp
+    src/assets/lv_font_app_16.c
 )
 target_include_directories(app_shell PUBLIC src)
 target_link_libraries(app_shell PUBLIC app_control lvgl::lvgl)

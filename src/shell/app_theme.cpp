@@ -2,6 +2,8 @@
 
 namespace dictpen::theme {
 
+extern "C" const lv_font_t lv_font_app_16;
+
 lv_color_t ink() { return lv_color_hex(0x17212B); }
 lv_color_t muted() { return lv_color_hex(0x66727D); }
 lv_color_t canvas() { return lv_color_hex(0xF3F5F6); }
@@ -13,7 +15,7 @@ lv_color_t danger() { return lv_color_hex(0xD94F45); }
 
 const lv_font_t* body_font()
 {
-    return &lv_font_source_han_sans_sc_16_cjk;
+    return &lv_font_app_16;
 }
 
 void style_screen(lv_obj_t* object)
