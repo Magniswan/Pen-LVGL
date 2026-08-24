@@ -69,3 +69,20 @@ test('dynamic applications are remeasured from official packages and anti-rollba
   assert.match(source, /atomic_registry\(/);
   assert.match(source, /LVGL_APP_REGISTRY_FD=/);
 });
+
+test('failed dynamic releases roll back only after previous bytes are reverified', () => {
+  assert.match(source, /rollback_application_after_failure\(/);
+  assert.match(source, /active\.previous_release/);
+  assert.match(source, /active\.previous_digest/);
+  assert.match(source, /verify_application_release\([\s\S]*active\.previous_release/);
+  assert.match(source, /rollback_failed_release\(active\)/);
+  assert.match(source, /persist_release_state\(/);
+  assert.match(source, /应用失败版本已隔离并安全回滚到上一版本/);
+});
+
+test('only a signed platform built-in may be used after a dynamic override is absent', () => {
+  assert.match(source, /if\(built_in_program_path\(app_id\) == nullptr\) return \{\};/);
+  assert.match(source, /const char\* path = built_in_program_path\(app_id\)/);
+  assert.match(source, /open_release_file\(release\.directory\.get\(\), path\)/);
+  assert.match(source, /trusted_regular\(executable\.get\(\), 0755/);
+});

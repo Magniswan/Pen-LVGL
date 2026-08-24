@@ -573,37 +573,33 @@ bool reserved_application_id(std::string_view app_id) noexcept
            app_id == "top.lvgl.installer";
 }
 
-bool verify_installed_application(
-    std::string_view app_id, const lvgl_platform::CertifiedSessionProfile& profile,
-    VerifiedApplication& output) noexcept
+bool verify_application_release(
+    std::string_view app_id, std::uint64_t release_counter,
+    const lvgl_platform::Sha512Digest& expected_digest, std::string_view signing_key_id,
+    const lvgl_platform::CertifiedSessionProfile& profile,
+    lvgl_platform::CryptoProvider& crypto, VerifiedApplication& output) noexcept
 {
-    if(!lvgl_platform::valid_session_app_id(app_id) || reserved_application_id(app_id)) return false;
-    const auto crypto = lvgl_platform::CryptoProvider::load_default();
-    const auto trust = lvgl_platform::OfficialTrustStore::compiled();
-    if(crypto == nullptr || !trust.configured()) return false;
-    const auto state = lvgl_platform::load_release_state(
-        kApplicationPolicyStore, std::string(app_id), *crypto);
-    if((state.status != lvgl_platform::StateStoreStatus::loaded &&
-        state.status != lvgl_platform::StateStoreStatus::loaded_degraded) ||
-       state.selected.state.current_release == 0) {
+    if(!lvgl_platform::valid_session_app_id(app_id) || reserved_application_id(app_id) ||
+       release_counter == 0 || signing_key_id.size() != 32) {
         return false;
     }
-    const auto& active = state.selected.state;
+    const auto trust = lvgl_platform::OfficialTrustStore::compiled();
+    if(!trust.configured()) return false;
     const std::string release_path = std::string(kApplicationStore) + "/apps/" +
                                      std::string(app_id) + "/releases/" +
-                                     std::to_string(active.current_release);
+                                     std::to_string(release_counter);
     output.release = open_absolute_directory(release_path);
     if(!trusted_directory(output.release.get())) return false;
     auto package_file = open_release_file(output.release.get(), ".package.lvapp");
     if(!read_all(package_file.get(), output.package, kMaximumPackageSize)) return false;
-    output.verification = trust.verify(output.package.data(), output.package.size(), *crypto);
+    output.verification = trust.verify(output.package.data(), output.package.size(), crypto);
     lvgl_platform::Sha512Digest digest {};
     if(!output.verification.ok() || output.verification.development ||
        !output.verification.signature_verified ||
-       !crypto->sha512(output.package.data(), output.package.size(), digest) ||
-       digest != active.current_digest || output.verification.manifest.app_id != app_id ||
-       output.verification.manifest.release_counter != active.current_release ||
-       output.verification.manifest.signing_key_id != active.signing_key_id ||
+       !crypto.sha512(output.package.data(), output.package.size(), digest) ||
+       digest != expected_digest || output.verification.manifest.app_id != app_id ||
+       output.verification.manifest.release_counter != release_counter ||
+       output.verification.manifest.signing_key_id != signing_key_id ||
        !installed_files_match(output.release.get(), output.package, output.verification)) {
         return false;
     }
@@ -612,6 +608,58 @@ bool verify_installed_application(
         profile.machine, {"storage.private"}};
     return lvgl_platform::evaluate_install_policy(
                output.verification, digest, policy).allowed();
+}
+
+bool verify_installed_application(
+    std::string_view app_id, const lvgl_platform::CertifiedSessionProfile& profile,
+    VerifiedApplication& output) noexcept
+{
+    if(!lvgl_platform::valid_session_app_id(app_id) || reserved_application_id(app_id)) return false;
+    const auto crypto = lvgl_platform::CryptoProvider::load_default();
+    if(crypto == nullptr) return false;
+    const auto state = lvgl_platform::load_release_state(
+        kApplicationPolicyStore, std::string(app_id), *crypto);
+    if((state.status != lvgl_platform::StateStoreStatus::loaded &&
+        state.status != lvgl_platform::StateStoreStatus::loaded_degraded) ||
+       state.selected.state.current_release == 0) {
+        return false;
+    }
+    const auto& active = state.selected.state;
+    return verify_application_release(
+        app_id, active.current_release, active.current_digest, active.signing_key_id,
+        profile, *crypto, output);
+}
+
+bool rollback_application_after_failure(
+    std::string_view app_id, const lvgl_platform::CertifiedSessionProfile& profile,
+    std::string& detail) noexcept
+{
+    if(!lvgl_platform::valid_session_app_id(app_id) || reserved_application_id(app_id)) return false;
+    const auto crypto = lvgl_platform::CryptoProvider::load_default();
+    if(crypto == nullptr) return false;
+    const auto stored = lvgl_platform::load_release_state(
+        kApplicationPolicyStore, std::string(app_id), *crypto);
+    if((stored.status != lvgl_platform::StateStoreStatus::loaded &&
+        stored.status != lvgl_platform::StateStoreStatus::loaded_degraded) ||
+       stored.selected.state.previous_release == 0) {
+        return false;
+    }
+    const auto& active = stored.selected.state;
+    VerifiedApplication previous;
+    if(!verify_application_release(
+           app_id, active.previous_release, active.previous_digest, active.signing_key_id,
+           profile, *crypto, previous)) {
+        return false;
+    }
+    const auto rolled_back = lvgl_platform::rollback_failed_release(active);
+    if(!rolled_back.has_value()) return false;
+    const auto persisted = lvgl_platform::persist_release_state(
+        kApplicationPolicyStore, *rolled_back, *crypto);
+    if(!persisted.ok()) return false;
+    detail = persisted.status == lvgl_platform::StateStoreStatus::written_degraded
+                 ? "应用失败版本已隔离并回滚；策略冗余需要修复"
+                 : "应用失败版本已隔离并安全回滚到上一版本";
+    return true;
 }
 
 std::vector<std::string> installed_application_ids() noexcept
@@ -952,7 +1000,7 @@ FileDescriptor open_verified_program(
                 }
                 return executable;
             }
-            return {};
+            if(built_in_program_path(app_id) == nullptr) return {};
         }
     }
     const char* path = built_in_program_path(app_id);
@@ -1367,7 +1415,10 @@ int main(int argc, char** argv)
             release, release.profile, foreground, &policy);
         if(!executable.valid()) {
             if(foreground != "top.lvgl.desktop") {
-                previous_error = "应用入口未包含在已验证的平台发行版中";
+                if(!rollback_application_after_failure(
+                       foreground, release.profile, previous_error)) {
+                    previous_error = "应用入口未包含在已验证的平台发行版中";
+                }
                 foreground = "top.lvgl.desktop";
                 continue;
             }
@@ -1414,7 +1465,10 @@ int main(int argc, char** argv)
             foreground = "top.lvgl.desktop";
             desktop_failures = 0;
         } else if(foreground != "top.lvgl.desktop") {
-            previous_error = "应用异常退出，代码 " + std::to_string(outcome.result);
+            if(!rollback_application_after_failure(
+                   foreground, release.profile, previous_error)) {
+                previous_error = "应用异常退出，代码 " + std::to_string(outcome.result);
+            }
             foreground = "top.lvgl.desktop";
             desktop_failures = 0;
         } else {
