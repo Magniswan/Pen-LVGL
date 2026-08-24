@@ -39,10 +39,24 @@ test('session daemon supervises one independent foreground application', () => {
   assert.match(source, /run_foreground\(/);
   assert.match(
     source,
-    /open_verified_program\([\s\S]*release, release\.profile, foreground, &private_storage\)/,
+    /open_verified_program\([\s\S]*release, release\.profile, foreground, &policy\)/,
   );
   assert.match(source, /foreground = "top\.lvgl\.desktop"/);
   assert.match(source, /应用异常退出/);
+});
+
+test('session daemon applies independent identity, resource limits, and inherited devices', () => {
+  assert.match(source, /RLIMIT_AS/);
+  assert.match(source, /RLIMIT_CPU/);
+  assert.match(source, /RLIMIT_NPROC/);
+  assert.match(source, /::setgroups\(0, nullptr\)/);
+  assert.match(source, /::setresgid\(policy\.gid/);
+  assert.match(source, /::setresuid\(policy\.uid/);
+  assert.match(source, /application_uid_is_unique\(app_id\)/);
+  assert.match(source, /PR_SET_DUMPABLE/);
+  assert.match(source, /LVGL_DRM_FD=/);
+  assert.match(source, /LVGL_SANDBOX_REQUIRED=1/);
+  assert.match(source, /LVGL_APP_UID=/);
 });
 
 test('dynamic applications are remeasured from official packages and anti-rollback state', () => {

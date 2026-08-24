@@ -37,6 +37,13 @@ struct VerifiedPackageFile {
     Sha256Digest sha256 {};
 };
 
+struct ApplicationResourceLimits {
+    std::uint32_t memory_mib {0};
+    std::uint32_t cpu_seconds {0};
+    std::uint32_t maximum_files {0};
+    std::uint32_t data_mib {0};
+};
+
 struct VerifiedPackageManifest {
     std::string app_id;
     std::string name;
@@ -51,6 +58,7 @@ struct VerifiedPackageManifest {
     std::vector<std::string> supported_machines;
     std::vector<std::string> capabilities;
     std::vector<VerifiedPackageFile> files;
+    ApplicationResourceLimits limits;
 };
 
 struct PackageVerification {

@@ -377,6 +377,8 @@ bool parse_manifest(const JsonDocument& document, VerifiedPackageManifest& manif
        !string_value(member(*online, "mode"), online_mode, 32) || online_mode != "offline-v1") {
         return false;
     }
+    manifest.limits = {
+        memory->GetUint(), cpu->GetUint(), max_files->GetUint(), data->GetUint()};
 
     const auto* files = member(document, "files");
     if(files == nullptr || !files->IsArray() || files->Empty() || files->Size() > kMaximumFiles) {

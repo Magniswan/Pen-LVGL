@@ -11,6 +11,7 @@
 #include "lvgl_platform/session_status.h"
 #include "lvgl_platform/session_profile.h"
 #include "lvgl_platform/state_store.h"
+#include "lvgl_platform/storage_protocol.h"
 #include "lvgl_platform/touch_protocol.h"
 #include "lvgl_platform/touch_router.h"
 #include "lvgl_platform/trust_store.h"
@@ -201,6 +202,62 @@ void test_touch_protocol()
            "ended contact cannot end twice");
 }
 
+void test_storage_protocol()
+{
+    using namespace lvgl_platform;
+    expect(valid_storage_record_name("game-state.v1"),
+           "storage accepts a canonical non-hidden record name");
+    expect(!valid_storage_record_name("../escape") &&
+               !valid_storage_record_name("State") &&
+               !valid_storage_record_name(".hidden"),
+           "storage record names cannot traverse, change case, or become hidden");
+
+    const StorageRequest write {
+        StorageCommand::write, 9, "game-state.v1", 128, {1, 2, 3, 4}};
+    const auto write_wire = encode_storage_request(write);
+    StorageRequest decoded_write;
+    expect(!write_wire.empty() &&
+               decode_storage_request(write_wire.data(), write_wire.size(), decoded_write) &&
+               decoded_write.command == StorageCommand::write &&
+               decoded_write.request_id == write.request_id &&
+               decoded_write.record == write.record && decoded_write.data == write.data,
+           "storage write request has a bounded canonical round trip");
+
+    auto bad_padding = write_wire;
+    bad_padding[80] = 1;
+    expect(!decode_storage_request(
+               bad_padding.data(), bad_padding.size(), decoded_write),
+           "storage protocol rejects nonzero reserved header bytes");
+    auto trailing = write_wire;
+    trailing.push_back(0);
+    expect(!decode_storage_request(trailing.data(), trailing.size(), decoded_write),
+           "storage protocol rejects trailing bytes");
+
+    const StorageResponse read {
+        StorageCommand::read, StorageProtocolStatus::ok, 12, {7, 8, 9}};
+    const auto read_wire = encode_storage_response(read);
+    StorageResponse decoded_read;
+    expect(!read_wire.empty() &&
+               decode_storage_response(read_wire.data(), read_wire.size(), decoded_read) &&
+               decoded_read.command == StorageCommand::read &&
+               decoded_read.status == StorageProtocolStatus::ok && decoded_read.data == read.data,
+           "storage read response has a bounded canonical round trip");
+    expect(encode_storage_request(
+               {StorageCommand::write, 1, "record", 2, {1, 2, 3}}).empty(),
+           "storage request encoder rejects records over the declared maximum");
+    expect(encode_storage_response(
+               {StorageCommand::read, StorageProtocolStatus::quota_exceeded, 2, {1}}).empty(),
+           "storage error responses cannot smuggle payload bytes");
+    expect(storage_write_within_quota(2, 80, true, 40, 50, 2, 100),
+           "quota model permits an in-place record replacement within byte quota");
+    expect(!storage_write_within_quota(2, 80, false, 0, 1, 2, 100),
+           "quota model rejects a new record at the file-count boundary");
+    expect(!storage_write_within_quota(2, 80, true, 40, 61, 2, 100),
+           "quota model rejects replacement beyond total byte quota");
+    expect(!storage_write_within_quota(1, 10, true, 11, 1, 2, 100),
+           "quota model fails closed on inconsistent measured usage");
+}
+
 void test_session_contract()
 {
     const auto ready_wire = lvgl_platform::encode_session_control(
@@ -326,6 +383,11 @@ void test_package_verifier()
     expect(verified.manifest.app_id == "test.lvgl.vector" &&
                verified.manifest.entry == "bin/test-app" && verified.manifest.files.size() == 2,
            "native verifier exposes the authenticated application manifest");
+    expect(verified.manifest.limits.memory_mib == 16 &&
+               verified.manifest.limits.cpu_seconds == 60 &&
+               verified.manifest.limits.maximum_files == 8 &&
+               verified.manifest.limits.data_mib == 2,
+           "native verifier retains every authenticated resource limit");
 
     auto untrusted_key = test_key;
     untrusted_key.production = false;
@@ -607,6 +669,7 @@ int main()
     test_crypto_provider();
     test_profile();
     test_touch_protocol();
+    test_storage_protocol();
     test_session_contract();
     test_package_verifier();
     test_trust_and_rollback_policy();

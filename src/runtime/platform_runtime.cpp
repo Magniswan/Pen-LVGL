@@ -3,6 +3,7 @@
 #include "platform/device_profile/device_profile.h"
 #include "platform/drm/drm_backend.h"
 #include "platform/input/input_backend.h"
+#include "runtime/runtime_sandbox.h"
 
 #include <lvgl.h>
 
@@ -165,6 +166,12 @@ int run_platform_application(RuntimeApplication& application,
     if(!input.open()) {
         std::cerr << "RUNTIME error=input_open detail=\"" << input.last_error() << "\"\n";
         return 3;
+    }
+
+    std::string sandbox_error;
+    if(!install_runtime_sandbox(sandbox_error)) {
+        std::cerr << "RUNTIME error=sandbox detail=\"" << sandbox_error << "\"\n";
+        return 6;
     }
 
     lv_init();

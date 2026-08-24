@@ -4,6 +4,7 @@
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -144,6 +145,39 @@ struct DrmBackend::Impl {
         mode.hdisplay = static_cast<uint16_t>(buffer_width);
         mode.vdisplay = static_cast<uint16_t>(buffer_height);
         overlay_mode = true;
+        return true;
+    }
+
+    bool open_inherited()
+    {
+        const char* value = std::getenv("LVGL_DRM_FD");
+        if(value == nullptr || *value == '\0') {
+            errno = EBADF;
+            return fail("inherited DRM descriptor missing");
+        }
+        char* end = nullptr;
+        errno = 0;
+        const long parsed = std::strtol(value, &end, 10);
+        if(errno != 0 || end == value || *end != '\0' || parsed < 3 ||
+           parsed > std::numeric_limits<int>::max()) {
+            errno = EBADF;
+            return fail("inherited DRM descriptor invalid");
+        }
+        struct stat inherited {};
+        struct stat expected {};
+        const int descriptor = static_cast<int>(parsed);
+        if(::fstat(descriptor, &inherited) != 0 || ::stat(profile.drm_device, &expected) != 0 ||
+           !S_ISCHR(inherited.st_mode) || !S_ISCHR(expected.st_mode) || inherited.st_uid != 0 ||
+           inherited.st_rdev != expected.st_rdev) {
+            errno = EBADF;
+            return fail("inherited DRM descriptor identity");
+        }
+        const int descriptor_flags = ::fcntl(descriptor, F_GETFD);
+        if(descriptor_flags < 0 ||
+           ::fcntl(descriptor, F_SETFD, descriptor_flags | FD_CLOEXEC) != 0) {
+            return fail("inherited DRM descriptor flags");
+        }
+        fd = descriptor;
         return true;
     }
 
@@ -359,8 +393,12 @@ bool DrmBackend::open()
 {
     if(impl_->fd >= 0) return true;
     if(!impl_->configure_overlay()) return false;
-    impl_->fd = ::open(impl_->profile.drm_device, O_RDWR | O_CLOEXEC);
-    if(impl_->fd < 0) return impl_->fail("open DRM device");
+    if(impl_->overlay_mode) {
+        if(!impl_->open_inherited()) return false;
+    } else {
+        impl_->fd = ::open(impl_->profile.drm_device, O_RDWR | O_CLOEXEC);
+        if(impl_->fd < 0) return impl_->fail("open DRM device");
+    }
 
     uint64_t dumb = 0;
     if(drmGetCap(impl_->fd, DRM_CAP_DUMB_BUFFER, &dumb) != 0 || dumb == 0) {

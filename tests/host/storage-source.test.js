@@ -6,23 +6,32 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '../..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
-test('sessiond grants a per-app directory descriptor only for private storage capability', () => {
+test('sessiond grants only a quota-enforcing broker socket for private storage capability', () => {
   const source = read('platform/src/session/session_daemon.cpp');
   assert.match(source, /kApplicationDataDirectory = "lvgl-data"/);
   assert.match(source, /manifest\.capabilities[\s\S]*"storage\.private"/);
   assert.match(source, /ensure_private_storage\(foreground\)/);
   assert.match(source, /LVGL_APP_STORAGE_FD=/);
   assert.match(source, /O_DIRECTORY \| O_NOFOLLOW/);
+  assert.match(source, /SOCK_SEQPACKET/);
+  assert.match(source, /quota_exceeded/);
+  assert.match(source, /policy\.limits\.data_mib/);
+  assert.match(source, /policy\.limits\.maximum_files/);
+  assert.match(source, /O_WRONLY \| O_CREAT \| O_EXCL \| O_NOFOLLOW/);
+  assert.match(source, /::renameat\(directory/);
+  assert.match(source, /::fsync\(directory\)/);
   assert.doesNotMatch(source, /LVGL_APP_STORAGE_(?:PATH|ROOT)/);
 });
 
-test('runtime storage accepts only fixed record names and atomic no-follow writes', () => {
+test('runtime storage accepts only canonical records over the broker protocol', () => {
   const source = read('src/runtime/app_storage.cpp');
-  assert.match(source, /valid_record_name/);
-  assert.match(source, /O_WRONLY \| O_CREAT \| O_EXCL \| O_NOFOLLOW/);
-  assert.match(source, /renameat\(directory_fd_/);
-  assert.match(source, /fsync\(directory_fd_\)/);
-  assert.match(source, /details\.st_nlink != 1/);
+  assert.match(source, /valid_storage_record_name/);
+  assert.match(source, /SOCK_SEQPACKET/);
+  assert.match(source, /SO_PEERCRED/);
+  assert.match(source, /peer\.uid != 0/);
+  assert.match(source, /encode_storage_request/);
+  assert.match(source, /decode_storage_response/);
+  assert.doesNotMatch(source, /openat\s*\(|renameat\s*\(|directory_fd_/);
   assert.doesNotMatch(source, /\/userdisk\/|system\s*\(|popen\s*\(/);
 });
 

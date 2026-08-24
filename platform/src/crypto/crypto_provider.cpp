@@ -11,6 +11,8 @@
 namespace lvgl_platform {
 namespace {
 
+constexpr unsigned char kEmptyMessage = 0;
+
 struct EVP_MD_CTX;
 struct EVP_MD;
 struct EVP_PKEY;
@@ -49,10 +51,6 @@ void* resolve_symbol(LibraryHandle handle, const char* name) noexcept
     return reinterpret_cast<void*>(::GetProcAddress(handle, name));
 }
 
-void close_library(LibraryHandle handle) noexcept
-{
-    if(handle != nullptr) ::FreeLibrary(handle);
-}
 #else
 using LibraryHandle = void*;
 
@@ -71,11 +69,16 @@ void* resolve_symbol(LibraryHandle handle, const char* name) noexcept
     return ::dlsym(handle, name);
 }
 
-void close_library(LibraryHandle handle) noexcept
-{
-    if(handle != nullptr) ::dlclose(handle);
-}
 #endif
+
+LibraryHandle process_crypto_library() noexcept
+{
+    // OpenSSL maintains process-global provider state. Unloading and reopening
+    // libcrypto between verifier instances is unsafe on supported OpenSSL 3
+    // builds, so pin the first successfully resolved module for process life.
+    static const LibraryHandle handle = open_library();
+    return handle;
+}
 
 template <typename Function>
 Function load_function(LibraryHandle handle, const char* name) noexcept
@@ -99,8 +102,6 @@ struct CryptoProvider::Impl {
     VerifyInit verify_init {nullptr};
     Verify verify {nullptr};
 
-    ~Impl() { close_library(handle); }
-
     bool complete() const noexcept
     {
         return handle != nullptr && md_ctx_new != nullptr && md_ctx_free != nullptr &&
@@ -118,7 +119,8 @@ struct CryptoProvider::Impl {
         auto* context = md_ctx_new();
         if(context == nullptr) return false;
         const bool initialized = digest_init(context, type(), nullptr) == 1;
-        const bool updated = initialized && digest_update(context, data, size) == 1;
+        const void* input = data == nullptr ? &kEmptyMessage : data;
+        const bool updated = initialized && digest_update(context, input, size) == 1;
         unsigned int output_size = 0;
         const bool finalized = updated && digest_final(context, output.data(), &output_size) == 1;
         md_ctx_free(context);
@@ -133,7 +135,7 @@ CryptoProvider::~CryptoProvider() = default;
 std::unique_ptr<CryptoProvider> CryptoProvider::load_default() noexcept
 {
     auto impl = std::make_unique<Impl>();
-    impl->handle = open_library();
+    impl->handle = process_crypto_library();
     if(impl->handle == nullptr) return nullptr;
     impl->md_ctx_new = load_function<MdCtxNew>(impl->handle, "EVP_MD_CTX_new");
     impl->md_ctx_free = load_function<MdCtxFree>(impl->handle, "EVP_MD_CTX_free");
@@ -178,9 +180,12 @@ bool CryptoProvider::verify_ed25519(
     }
     const bool initialized =
         impl_->verify_init(context, nullptr, nullptr, nullptr, public_key) == 1;
+    const auto* input = message == nullptr
+                            ? &kEmptyMessage
+                            : static_cast<const unsigned char*>(message);
     const bool verified = initialized &&
                           impl_->verify(context, signature.data(), signature.size(),
-                                        static_cast<const unsigned char*>(message), message_size) == 1;
+                                        input, message_size) == 1;
     impl_->md_ctx_free(context);
     impl_->pkey_free(public_key);
     return verified;

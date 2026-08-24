@@ -1,16 +1,19 @@
 #include "runtime/app_storage.h"
 
+#include "lvgl_platform/storage_protocol.h"
+
 #include <array>
 #include <cerrno>
 #include <cstdlib>
-#include <cstring>
 #include <limits>
 #include <string>
+#include <vector>
 
 #if !defined(_WIN32)
 #include <fcntl.h>
-#include <sys/random.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <unistd.h>
 #endif
 
@@ -19,68 +22,61 @@ namespace {
 
 #if !defined(_WIN32)
 
-class FileDescriptor {
-public:
-    explicit FileDescriptor(int value = -1) noexcept : value_(value) {}
-    ~FileDescriptor() { if(value_ >= 0) ::close(value_); }
-    int get() const noexcept { return value_; }
-    bool valid() const noexcept { return value_ >= 0; }
-
-private:
-    int value_;
-};
-
-int inherited_directory() noexcept
+int inherited_storage_socket() noexcept
 {
     const char* value = std::getenv("LVGL_APP_STORAGE_FD");
     if(value == nullptr || *value == '\0') return -1;
     char* end = nullptr;
     errno = 0;
     const long parsed = std::strtol(value, &end, 10);
-    if(errno != 0 || end == value || *end != '\0' || parsed < 0 ||
+    if(errno != 0 || end == value || *end != '\0' || parsed < 3 ||
        parsed > std::numeric_limits<int>::max()) {
         return -1;
     }
-    struct stat details {};
     const int descriptor = static_cast<int>(parsed);
-    if(::fstat(descriptor, &details) != 0 || !S_ISDIR(details.st_mode) ||
-       details.st_uid != 0 || (details.st_mode & 0777) != 0700) {
+    struct stat details {};
+    int type = 0;
+    socklen_t type_size = sizeof(type);
+    if(::fstat(descriptor, &details) != 0 || !S_ISSOCK(details.st_mode) ||
+       ::getsockopt(descriptor, SOL_SOCKET, SO_TYPE, &type, &type_size) != 0 ||
+       type != SOCK_SEQPACKET) {
         return -1;
     }
-    return descriptor;
+#if defined(SO_PEERCRED)
+    ucred peer {};
+    socklen_t peer_size = sizeof(peer);
+    if(::getsockopt(descriptor, SOL_SOCKET, SO_PEERCRED, &peer, &peer_size) != 0 ||
+       peer_size != sizeof(peer) || peer.uid != 0) {
+        return -1;
+    }
+#endif
+    const int duplicate = ::fcntl(descriptor, F_DUPFD_CLOEXEC, 3);
+    if(duplicate < 0) return -1;
+    const timeval timeout {2, 0};
+    if(::setsockopt(duplicate, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) != 0 ||
+       ::setsockopt(duplicate, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) != 0) {
+        ::close(duplicate);
+        return -1;
+    }
+    return duplicate;
 }
 
-bool write_all(int descriptor, const void* data, std::size_t size) noexcept
+bool exchange(
+    int descriptor, const lvgl_platform::StorageRequest& request,
+    lvgl_platform::StorageResponse& response) noexcept
 {
-    const auto* bytes = static_cast<const std::uint8_t*>(data);
-    std::size_t written = 0;
-    while(written < size) {
-        const auto count = ::write(descriptor, bytes + written, size - written);
-        if(count < 0 && errno == EINTR) continue;
-        if(count <= 0) return false;
-        written += static_cast<std::size_t>(count);
+    const auto packet = lvgl_platform::encode_storage_request(request);
+    if(packet.empty() ||
+       ::send(descriptor, packet.data(), packet.size(), MSG_NOSIGNAL) !=
+           static_cast<ssize_t>(packet.size())) {
+        return false;
     }
-    return true;
-}
-
-bool random_suffix(std::string& output) noexcept
-{
-    std::array<std::uint8_t, 12> random {};
-    std::size_t received = 0;
-    while(received < random.size()) {
-        const auto count = ::getrandom(random.data() + received, random.size() - received, 0);
-        if(count < 0 && errno == EINTR) continue;
-        if(count <= 0) return false;
-        received += static_cast<std::size_t>(count);
-    }
-    constexpr char hex[] = "0123456789abcdef";
-    output.clear();
-    output.reserve(random.size() * 2);
-    for(const auto value : random) {
-        output.push_back(hex[value >> 4U]);
-        output.push_back(hex[value & 0x0fU]);
-    }
-    return true;
+    std::array<std::uint8_t, lvgl_platform::kMaximumStoragePacketSize> bytes {};
+    const auto received = ::recv(descriptor, bytes.data(), bytes.size(), MSG_TRUNC);
+    return received >= 0 && static_cast<std::size_t>(received) <= bytes.size() &&
+           lvgl_platform::decode_storage_response(
+               bytes.data(), static_cast<std::size_t>(received), response) &&
+           response.request_id == request.request_id && response.command == request.command;
 }
 
 #endif
@@ -90,28 +86,15 @@ bool random_suffix(std::string& output) noexcept
 AppStorage::AppStorage() noexcept
 {
 #if !defined(_WIN32)
-    const int inherited = inherited_directory();
-    if(inherited >= 0) directory_fd_ = ::fcntl(inherited, F_DUPFD_CLOEXEC, 3);
+    socket_fd_ = inherited_storage_socket();
 #endif
 }
 
 AppStorage::~AppStorage()
 {
 #if !defined(_WIN32)
-    if(directory_fd_ >= 0) ::close(directory_fd_);
+    if(socket_fd_ >= 0) ::close(socket_fd_);
 #endif
-}
-
-bool AppStorage::valid_record_name(std::string_view value) noexcept
-{
-    if(value.empty() || value.size() > 64 || value.front() == '.') return false;
-    for(const char character : value) {
-        const bool allowed = (character >= 'a' && character <= 'z') ||
-                             (character >= '0' && character <= '9') ||
-                             character == '.' || character == '_' || character == '-';
-        if(!allowed) return false;
-    }
-    return value.find("..") == std::string_view::npos;
 }
 
 bool AppStorage::read(
@@ -124,32 +107,23 @@ bool AppStorage::read(
     (void)maximum_size;
     return false;
 #else
-    if(directory_fd_ < 0 || !valid_record_name(record) || maximum_size == 0) return false;
-    const std::string name(record);
-    FileDescriptor input(::openat(
-        directory_fd_, name.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC));
-    struct stat details {};
-    if(!input.valid() || ::fstat(input.get(), &details) != 0 || !S_ISREG(details.st_mode) ||
-       details.st_uid != 0 || details.st_nlink != 1 || (details.st_mode & 0777) != 0600 ||
-       details.st_size <= 0 || static_cast<std::uint64_t>(details.st_size) > maximum_size) {
+    if(socket_fd_ < 0 || maximum_size == 0 ||
+       maximum_size > lvgl_platform::kMaximumStorageRecordSize ||
+       !lvgl_platform::valid_storage_record_name(record)) {
         return false;
     }
-    output.assign(static_cast<std::size_t>(details.st_size), 0);
-    std::size_t received = 0;
-    while(received < output.size()) {
-        const auto count = ::read(input.get(), output.data() + received, output.size() - received);
-        if(count < 0 && errno == EINTR) continue;
-        if(count <= 0) {
-            output.clear();
-            return false;
-        }
-        received += static_cast<std::size_t>(count);
-    }
-    std::uint8_t trailing = 0;
-    if(::read(input.get(), &trailing, 1) != 0) {
-        output.clear();
+    const auto request_id = next_request_id_++;
+    if(request_id == 0) return false;
+    const lvgl_platform::StorageRequest request {
+        lvgl_platform::StorageCommand::read, request_id, std::string(record),
+        static_cast<std::uint32_t>(maximum_size), {}};
+    lvgl_platform::StorageResponse response;
+    if(!exchange(socket_fd_, request, response) ||
+       response.status != lvgl_platform::StorageProtocolStatus::ok || response.data.empty() ||
+       response.data.size() > maximum_size) {
         return false;
     }
+    output = std::move(response.data);
     return true;
 #endif
 }
@@ -165,24 +139,21 @@ bool AppStorage::write_atomic(
     (void)maximum_size;
     return false;
 #else
-    if(directory_fd_ < 0 || !valid_record_name(record) || data == nullptr || size == 0 ||
-       size > maximum_size) {
+    if(socket_fd_ < 0 || data == nullptr || size == 0 || size > maximum_size ||
+       maximum_size > lvgl_platform::kMaximumStorageRecordSize ||
+       !lvgl_platform::valid_storage_record_name(record)) {
         return false;
     }
-    std::string suffix;
-    if(!random_suffix(suffix)) return false;
-    const std::string name(record);
-    const std::string temporary = ".write-" + suffix;
-    FileDescriptor output(::openat(
-        directory_fd_, temporary.c_str(),
-        O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600));
-    if(!output.valid() || !write_all(output.get(), data, size) || ::fsync(output.get()) != 0 ||
-       ::renameat(directory_fd_, temporary.c_str(), directory_fd_, name.c_str()) != 0 ||
-       ::fsync(directory_fd_) != 0) {
-        ::unlinkat(directory_fd_, temporary.c_str(), 0);
-        return false;
-    }
-    return true;
+    const auto request_id = next_request_id_++;
+    if(request_id == 0) return false;
+    const auto* bytes = static_cast<const std::uint8_t*>(data);
+    const lvgl_platform::StorageRequest request {
+        lvgl_platform::StorageCommand::write, request_id, std::string(record),
+        static_cast<std::uint32_t>(maximum_size),
+        std::vector<std::uint8_t>(bytes, bytes + size)};
+    lvgl_platform::StorageResponse response;
+    return exchange(socket_fd_, request, response) &&
+           response.status == lvgl_platform::StorageProtocolStatus::ok && response.data.empty();
 #endif
 }
 

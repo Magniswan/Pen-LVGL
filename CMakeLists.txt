@@ -52,6 +52,7 @@ add_subdirectory(third_party/lvgl EXCLUDE_FROM_ALL)
 add_library(lvgl_platform_contract STATIC
     platform/src/crypto/crypto_provider.cpp
     platform/src/ipc/touch_protocol.cpp
+    platform/src/ipc/storage_protocol.cpp
     platform/src/package/rollback_policy.cpp
     platform/src/package/package_installer.cpp
     platform/src/package/package_verifier.cpp
@@ -113,6 +114,7 @@ if(BUILD_TESTING)
         tests/host/game_2048_model_test.cpp
     )
     target_include_directories(game_2048_model_tests PRIVATE apps/game-2048 src)
+    target_link_libraries(game_2048_model_tests PRIVATE lvgl_platform_contract)
     if(MSVC)
         target_compile_options(game_2048_model_tests PRIVATE /W4 /WX)
     else()
@@ -132,7 +134,7 @@ if(BUILD_TESTING)
         tests/host/game_2048_visual_test.cpp
     )
     target_include_directories(game_2048_visual_test PRIVATE src apps/game-2048)
-    target_link_libraries(game_2048_visual_test PRIVATE lvgl::lvgl)
+    target_link_libraries(game_2048_visual_test PRIVATE lvgl::lvgl lvgl_platform_contract)
     if(MSVC)
         target_compile_options(game_2048_visual_test PRIVATE /W4 /WX /utf-8 /wd4996)
     else()
@@ -148,21 +150,33 @@ add_library(device_profile STATIC
     src/platform/device_profile/device_profile.cpp
 )
 target_include_directories(device_profile PUBLIC src)
-target_compile_options(device_profile PRIVATE -Wall -Wextra -Wpedantic -Werror)
+if(MSVC)
+    target_compile_options(device_profile PRIVATE /W4 /WX)
+else()
+    target_compile_options(device_profile PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
 
 add_library(app_registry STATIC
     src/session/app_registry.cpp
 )
 target_include_directories(app_registry PUBLIC src)
 target_link_libraries(app_registry PUBLIC lvgl_platform_contract)
-target_compile_options(app_registry PRIVATE -Wall -Wextra -Wpedantic -Werror)
+if(MSVC)
+    target_compile_options(app_registry PRIVATE /W4 /WX)
+else()
+    target_compile_options(app_registry PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
 
 add_library(session_protocol STATIC
     src/session/session_protocol.cpp
 )
 target_include_directories(session_protocol PUBLIC src)
 target_link_libraries(session_protocol PUBLIC app_registry)
-target_compile_options(session_protocol PRIVATE -Wall -Wextra -Wpedantic -Werror)
+if(MSVC)
+    target_compile_options(session_protocol PRIVATE /W4 /WX)
+else()
+    target_compile_options(session_protocol PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
 
 add_library(app_control STATIC
     src/runtime/app_control.cpp
@@ -170,7 +184,11 @@ add_library(app_control STATIC
 )
 target_include_directories(app_control PUBLIC src)
 target_link_libraries(app_control PUBLIC session_protocol lvgl_platform_contract)
-target_compile_options(app_control PRIVATE -Wall -Wextra -Wpedantic -Werror)
+if(MSVC)
+    target_compile_options(app_control PRIVATE /W4 /WX)
+else()
+    target_compile_options(app_control PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
 
 add_library(app_shell STATIC
     src/shell/app_theme.cpp
@@ -179,7 +197,11 @@ add_library(app_shell STATIC
 )
 target_include_directories(app_shell PUBLIC src)
 target_link_libraries(app_shell PUBLIC app_control lvgl::lvgl)
-target_compile_options(app_shell PRIVATE -Wall -Wextra -Wpedantic -Werror)
+if(MSVC)
+    target_compile_options(app_shell PRIVATE /W4 /WX /utf-8 /wd4996)
+else()
+    target_compile_options(app_shell PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
 
 if(NOT WIN32)
     add_executable(lvgl_sessiond
@@ -249,6 +271,7 @@ if(EXISTS "${DEVICE_LIBDRM_PATH}")
 
     add_library(platform_runtime STATIC
         src/runtime/platform_runtime.cpp
+        src/runtime/runtime_sandbox.cpp
         src/diagnostics/runtime_metrics.cpp
         src/platform/drm/drm_backend.cpp
         src/platform/input/input_backend.cpp

@@ -4,6 +4,7 @@
 #include "lvgl_platform/session_control.h"
 #include "lvgl_platform/session_profile.h"
 #include "lvgl_platform/session_status.h"
+#include "lvgl_platform/storage_protocol.h"
 #include "lvgl_platform/touch_protocol.h"
 #include "lvgl_platform/touch_router.h"
 #include "lvgl_platform/trust_store.h"
@@ -25,9 +26,11 @@
 
 #include <dirent.h>
 #include <fcntl.h>
+#include <grp.h>
 #include <poll.h>
 #include <sys/file.h>
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #include <sys/random.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -98,6 +101,13 @@ struct VerifiedApplication {
     std::vector<std::uint8_t> package;
 };
 
+struct ProgramPolicy {
+    lvgl_platform::ApplicationResourceLimits limits;
+    bool private_storage {false};
+    uid_t uid {0};
+    gid_t gid {0};
+};
+
 struct DirectoryCloser {
     void operator()(DIR* directory) const noexcept
     {
@@ -117,6 +127,18 @@ bool private_directory(int descriptor) noexcept
     struct stat details {};
     return descriptor >= 0 && ::fstat(descriptor, &details) == 0 && S_ISDIR(details.st_mode) &&
            details.st_uid == 0 && (details.st_mode & 0777) == 0700;
+}
+
+uid_t application_uid(std::string_view app_id) noexcept
+{
+    std::uint32_t hash = 2166136261U;
+    for(const unsigned char character : app_id) {
+        hash ^= character;
+        hash *= 16777619U;
+    }
+    constexpr std::uint32_t kFirstApplicationUid = 100000U;
+    constexpr std::uint32_t kApplicationUidRange = 900000000U;
+    return static_cast<uid_t>(kFirstApplicationUid + hash % kApplicationUidRange);
 }
 
 bool trusted_regular(int descriptor, std::uint16_t expected_mode, std::uint64_t expected_size) noexcept
@@ -183,6 +205,194 @@ FileDescriptor ensure_private_storage(std::string_view app_id) noexcept
         return {};
     }
     return directory;
+}
+
+bool write_all(int descriptor, const void* data, std::size_t size) noexcept;
+
+struct StorageUsage {
+    std::uint32_t files {0};
+    std::uint64_t bytes {0};
+};
+
+bool storage_temporary_name(std::string_view name) noexcept
+{
+    constexpr std::string_view broker_prefix = ".broker-";
+    constexpr std::string_view legacy_prefix = ".write-";
+    const auto prefix = name.substr(0, broker_prefix.size()) == broker_prefix
+                            ? broker_prefix
+                            : legacy_prefix;
+    if(name.size() != prefix.size() + 24 || name.substr(0, prefix.size()) != prefix) return false;
+    return std::all_of(name.begin() + static_cast<std::ptrdiff_t>(prefix.size()), name.end(),
+                       [](const char character) {
+                           return (character >= '0' && character <= '9') ||
+                                  (character >= 'a' && character <= 'f');
+                       });
+}
+
+bool scan_storage(int directory, StorageUsage& usage) noexcept
+{
+    usage = {};
+    bool cleaned = false;
+    const int duplicate = ::dup(directory);
+    if(duplicate < 0) return false;
+    std::unique_ptr<DIR, DirectoryCloser> entries(::fdopendir(duplicate));
+    if(!entries) {
+        ::close(duplicate);
+        return false;
+    }
+    while(const auto* entry = ::readdir(entries.get())) {
+        const std::string_view name(entry->d_name);
+        if(name == "." || name == "..") continue;
+        struct stat details {};
+        if(::fstatat(directory, entry->d_name, &details, AT_SYMLINK_NOFOLLOW) != 0 ||
+           !S_ISREG(details.st_mode) || details.st_uid != 0 || details.st_nlink != 1 ||
+           (details.st_mode & 0777) != 0600) {
+            return false;
+        }
+        if(storage_temporary_name(name)) {
+            if(::unlinkat(directory, entry->d_name, 0) != 0) return false;
+            cleaned = true;
+            continue;
+        }
+        if(details.st_size <= 0 || !lvgl_platform::valid_storage_record_name(name) ||
+           static_cast<std::uint64_t>(details.st_size) >
+               lvgl_platform::kMaximumStorageRecordSize ||
+           usage.files == std::numeric_limits<std::uint32_t>::max() ||
+           usage.bytes > std::numeric_limits<std::uint64_t>::max() -
+                             static_cast<std::uint64_t>(details.st_size)) {
+            return false;
+        }
+        ++usage.files;
+        usage.bytes += static_cast<std::uint64_t>(details.st_size);
+    }
+    return !cleaned || ::fsync(directory) == 0;
+}
+
+bool storage_random_suffix(std::string& output) noexcept
+{
+    std::array<std::uint8_t, 12> random {};
+    std::size_t received = 0;
+    while(received < random.size()) {
+        const auto count = ::getrandom(random.data() + received, random.size() - received, 0);
+        if(count < 0 && errno == EINTR) continue;
+        if(count <= 0) return false;
+        received += static_cast<std::size_t>(count);
+    }
+    constexpr char hex[] = "0123456789abcdef";
+    output.clear();
+    output.reserve(random.size() * 2);
+    for(const auto value : random) {
+        output.push_back(hex[value >> 4U]);
+        output.push_back(hex[value & 0x0fU]);
+    }
+    return true;
+}
+
+lvgl_platform::StorageProtocolStatus read_storage_record(
+    int directory, const lvgl_platform::StorageRequest& request,
+    std::vector<std::uint8_t>& data) noexcept
+{
+    const std::string name(request.record);
+    FileDescriptor input(::openat(
+        directory, name.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC));
+    if(!input.valid()) {
+        return errno == ENOENT ? lvgl_platform::StorageProtocolStatus::not_found
+                               : lvgl_platform::StorageProtocolStatus::io_error;
+    }
+    struct stat details {};
+    if(::fstat(input.get(), &details) != 0 || !S_ISREG(details.st_mode) ||
+       details.st_uid != 0 || details.st_nlink != 1 || (details.st_mode & 0777) != 0600 ||
+       details.st_size <= 0 ||
+       static_cast<std::uint64_t>(details.st_size) > request.maximum_size) {
+        return lvgl_platform::StorageProtocolStatus::storage_corrupt;
+    }
+    data.assign(static_cast<std::size_t>(details.st_size), 0);
+    std::size_t received = 0;
+    while(received < data.size()) {
+        const auto count = ::read(input.get(), data.data() + received, data.size() - received);
+        if(count < 0 && errno == EINTR) continue;
+        if(count <= 0) return lvgl_platform::StorageProtocolStatus::io_error;
+        received += static_cast<std::size_t>(count);
+    }
+    std::uint8_t trailing = 0;
+    return ::read(input.get(), &trailing, 1) == 0
+               ? lvgl_platform::StorageProtocolStatus::ok
+               : lvgl_platform::StorageProtocolStatus::storage_corrupt;
+}
+
+lvgl_platform::StorageProtocolStatus write_storage_record(
+    int directory, const lvgl_platform::StorageRequest& request,
+    const lvgl_platform::ApplicationResourceLimits& limits) noexcept
+{
+    StorageUsage usage;
+    if(!scan_storage(directory, usage)) return lvgl_platform::StorageProtocolStatus::storage_corrupt;
+    const std::string name(request.record);
+    struct stat existing {};
+    std::uint64_t existing_size = 0;
+    bool exists = false;
+    if(::fstatat(directory, name.c_str(), &existing, AT_SYMLINK_NOFOLLOW) == 0) {
+        if(!S_ISREG(existing.st_mode) || existing.st_uid != 0 || existing.st_nlink != 1 ||
+           (existing.st_mode & 0777) != 0600 || existing.st_size <= 0) {
+            return lvgl_platform::StorageProtocolStatus::storage_corrupt;
+        }
+        exists = true;
+        existing_size = static_cast<std::uint64_t>(existing.st_size);
+    } else if(errno != ENOENT) {
+        return lvgl_platform::StorageProtocolStatus::io_error;
+    }
+    const std::uint64_t quota = static_cast<std::uint64_t>(limits.data_mib) * 1024U * 1024U;
+    if(!lvgl_platform::storage_write_within_quota(
+           usage.files, usage.bytes, exists, existing_size, request.data.size(),
+           limits.maximum_files, quota)) {
+        return lvgl_platform::StorageProtocolStatus::quota_exceeded;
+    }
+    std::string suffix;
+    if(!storage_random_suffix(suffix)) return lvgl_platform::StorageProtocolStatus::io_error;
+    const std::string temporary = ".broker-" + suffix;
+    FileDescriptor output(::openat(
+        directory, temporary.c_str(),
+        O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600));
+    if(!output.valid() || !write_all(output.get(), request.data.data(), request.data.size()) ||
+       ::fsync(output.get()) != 0 ||
+       ::renameat(directory, temporary.c_str(), directory, name.c_str()) != 0 ||
+       ::fsync(directory) != 0) {
+        ::unlinkat(directory, temporary.c_str(), 0);
+        return lvgl_platform::StorageProtocolStatus::io_error;
+    }
+    return lvgl_platform::StorageProtocolStatus::ok;
+}
+
+bool handle_storage_request(
+    int socket_descriptor, int directory,
+    const lvgl_platform::ApplicationResourceLimits& limits) noexcept
+{
+    std::array<std::uint8_t, lvgl_platform::kMaximumStoragePacketSize> bytes {};
+    const auto received = ::recv(
+        socket_descriptor, bytes.data(), bytes.size(), MSG_DONTWAIT | MSG_TRUNC);
+    if(received <= 0 || static_cast<std::size_t>(received) > bytes.size()) return false;
+    lvgl_platform::StorageRequest request;
+    if(!lvgl_platform::decode_storage_request(
+           bytes.data(), static_cast<std::size_t>(received), request)) {
+        return false;
+    }
+    lvgl_platform::StorageResponse response {
+        request.command, lvgl_platform::StorageProtocolStatus::invalid_request, request.request_id, {}};
+    if(request.command == lvgl_platform::StorageCommand::read) {
+        StorageUsage usage;
+        if(!scan_storage(directory, usage) || usage.files > limits.maximum_files ||
+           usage.bytes > static_cast<std::uint64_t>(limits.data_mib) * 1024U * 1024U) {
+            response.status = lvgl_platform::StorageProtocolStatus::storage_corrupt;
+        } else {
+            response.status = read_storage_record(directory, request, response.data);
+            if(response.status != lvgl_platform::StorageProtocolStatus::ok) response.data.clear();
+        }
+    } else if(request.command == lvgl_platform::StorageCommand::write) {
+        response.status = write_storage_record(directory, request, limits);
+    }
+    const auto encoded = lvgl_platform::encode_storage_response(response);
+    return !encoded.empty() &&
+           ::send(socket_descriptor, encoded.data(), encoded.size(), MSG_NOSIGNAL) ==
+               static_cast<ssize_t>(encoded.size());
 }
 
 FileDescriptor open_release_file(int release, std::string_view path) noexcept
@@ -433,6 +643,22 @@ std::vector<std::string> installed_application_ids() noexcept
     return ids;
 }
 
+bool application_uid_is_unique(std::string_view app_id) noexcept
+{
+    const uid_t selected = application_uid(app_id);
+    constexpr std::string_view built_ins[] {
+        "top.lvgl.platform", "top.lvgl.desktop", "top.lvgl.installer",
+        "top.lvgl.game2048",
+    };
+    for(const auto candidate : built_ins) {
+        if(candidate != app_id && application_uid(candidate) == selected) return false;
+    }
+    for(const auto& candidate : installed_application_ids()) {
+        if(candidate != app_id && application_uid(candidate) == selected) return false;
+    }
+    return true;
+}
+
 bool write_all(int descriptor, const void* data, std::size_t size) noexcept
 {
     const auto* bytes = static_cast<const std::uint8_t*>(data);
@@ -565,30 +791,78 @@ bool inherit_descriptor(int descriptor) noexcept
     return flags >= 0 && ::fcntl(descriptor, F_SETFD, flags & ~FD_CLOEXEC) == 0;
 }
 
+bool set_limit(int resource, rlim_t value) noexcept
+{
+    const rlimit limit {value, value};
+    return ::setrlimit(resource, &limit) == 0;
+}
+
+bool apply_child_policy(const ProgramPolicy& policy) noexcept
+{
+    if(policy.uid == 0 || policy.gid == 0 || policy.limits.memory_mib < 8 ||
+       policy.limits.cpu_seconds == 0 || policy.limits.maximum_files == 0 ||
+       policy.limits.data_mib == 0) {
+        return false;
+    }
+    const rlim_t memory = static_cast<rlim_t>(policy.limits.memory_mib) * 1024U * 1024U;
+    const rlim_t descriptors = std::max<rlim_t>(16, policy.limits.maximum_files);
+    const rlim_t stack = std::min<rlim_t>(8U * 1024U * 1024U, memory / 4U);
+    constexpr rlim_t kMaximumInheritedLogBytes = 1024U * 1024U;
+    if(!set_limit(RLIMIT_AS, memory) || !set_limit(RLIMIT_CPU, policy.limits.cpu_seconds) ||
+       !set_limit(RLIMIT_CORE, 0) || !set_limit(RLIMIT_FSIZE, kMaximumInheritedLogBytes) ||
+       !set_limit(RLIMIT_NOFILE, descriptors) || !set_limit(RLIMIT_NPROC, 1) ||
+       !set_limit(RLIMIT_MEMLOCK, 0) || !set_limit(RLIMIT_STACK, stack) ||
+       ::prctl(PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0) != 0 || ::getppid() == 1 ||
+       ::setgroups(0, nullptr) != 0 || ::setresgid(policy.gid, policy.gid, policy.gid) != 0 ||
+       ::setresuid(policy.uid, policy.uid, policy.uid) != 0 ||
+       ::prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0 || ::chdir("/") != 0) {
+        return false;
+    }
+    return ::geteuid() == policy.uid && ::getegid() == policy.gid;
+}
+
+FileDescriptor open_drm_device(
+    const lvgl_platform::CertifiedSessionProfile& profile) noexcept
+{
+    FileDescriptor descriptor(::open(
+        profile.drm_device.c_str(), O_RDWR | O_NOFOLLOW | O_CLOEXEC));
+    struct stat details {};
+    if(!descriptor.valid() || ::fstat(descriptor.get(), &details) != 0 ||
+       !S_ISCHR(details.st_mode) || details.st_uid != 0 || details.st_nlink != 1) {
+        return {};
+    }
+    return descriptor;
+}
+
 pid_t start_program(
-    int executable, int control, int touch, int registry, int storage,
-    std::string_view program_id,
+    int executable, int control, int touch, int registry, int storage, int drm,
+    std::string_view program_id, const ProgramPolicy& policy,
     const lvgl_platform::CertifiedSessionProfile& profile, std::string_view previous_error) noexcept
 {
     const pid_t child = ::fork();
     if(child != 0) return child;
     if(::setpgid(0, 0) != 0 || !inherit_descriptor(control) || !inherit_descriptor(touch) ||
        (registry >= 0 && !inherit_descriptor(registry)) ||
-       (storage >= 0 && !inherit_descriptor(storage))) {
+       (storage >= 0 && !inherit_descriptor(storage)) || !inherit_descriptor(drm)) {
         _exit(126);
     }
     const long limit_value = ::sysconf(_SC_OPEN_MAX);
     const int limit = static_cast<int>(
         std::min<long>(limit_value > 0 ? limit_value : 1024, 65536));
     for(int fd = STDERR_FILENO + 1; fd < limit; ++fd) {
-        if(fd != executable && fd != control && fd != touch && fd != registry && fd != storage) {
+        if(fd != executable && fd != control && fd != touch && fd != registry && fd != storage &&
+           fd != drm) {
             ::close(fd);
         }
     }
+    if(!apply_child_policy(policy)) _exit(125);
     std::vector<std::string> environment {
         "PATH=/usr/sbin:/usr/bin:/sbin:/bin",
         "LVGL_SESSION_CONTROL_FD=" + std::to_string(control),
         "LVGL_TOUCH_FD=" + std::to_string(touch),
+        "LVGL_DRM_FD=" + std::to_string(drm),
+        "LVGL_SANDBOX_REQUIRED=1",
+        "LVGL_APP_UID=" + std::to_string(policy.uid),
         "LVGL_LOGICAL_WIDTH=" + std::to_string(profile.logical_width),
         "LVGL_LOGICAL_HEIGHT=" + std::to_string(profile.logical_height),
         "LVGL_DRM_DEVICE=" + profile.drm_device,
@@ -646,9 +920,13 @@ const char* built_in_program_path(std::string_view app_id) noexcept
 
 FileDescriptor open_verified_program(
     const VerifiedRelease& release, const lvgl_platform::CertifiedSessionProfile& profile,
-    std::string_view app_id, bool* private_storage = nullptr)
+    std::string_view app_id, ProgramPolicy* policy = nullptr)
 {
-    if(private_storage != nullptr) *private_storage = false;
+    if(policy != nullptr) {
+        if(!application_uid_is_unique(app_id)) return {};
+        const auto uid = application_uid(app_id);
+        *policy = {{}, false, uid, static_cast<gid_t>(uid)};
+    }
     if(!reserved_application_id(app_id)) {
         VerifiedApplication application;
         if(verify_installed_application(app_id, profile, application)) {
@@ -659,8 +937,9 @@ FileDescriptor open_verified_program(
             auto executable = open_release_file(application.release.get(), manifest.entry);
             if(entry != manifest.files.end() && entry->role == "executable" &&
                entry->mode == 0755 && trusted_regular(executable.get(), 0755, entry->size)) {
-                if(private_storage != nullptr) {
-                    *private_storage = std::find(
+                if(policy != nullptr) {
+                    policy->limits = manifest.limits;
+                    policy->private_storage = std::find(
                         manifest.capabilities.begin(), manifest.capabilities.end(),
                         "storage.private") != manifest.capabilities.end();
                 }
@@ -680,8 +959,9 @@ FileDescriptor open_verified_program(
            !trusted_regular(executable.get(), 0755, manifest_file->size)) {
             return {};
         }
-        if(private_storage != nullptr && app_id == "top.lvgl.game2048") {
-            *private_storage = true;
+        if(policy != nullptr) {
+            policy->limits = release.verification.manifest.limits;
+            policy->private_storage = app_id == "top.lvgl.game2048";
         }
         return executable;
     }
@@ -730,16 +1010,24 @@ struct ForegroundOutcome {
 ForegroundOutcome run_foreground(
     int executable, std::string_view program_id, std::string_view previous_error,
     const lvgl_platform::CertifiedSessionProfile& profile, int run_directory,
-    int external_touch_socket, int registry, int storage, lvgl_platform::TouchRouter& router,
+    int external_touch_socket, int registry, int storage_directory,
+    const ProgramPolicy& policy, lvgl_platform::TouchRouter& router,
     lvgl_platform::SessionStatusDocument& status)
 {
     ForegroundOutcome outcome;
     int control_pair[2] {-1, -1};
     int touch_pair[2] {-1, -1};
+    int storage_pair[2] {-1, -1};
     if(::socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, control_pair) != 0 ||
-       ::socketpair(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0, touch_pair) != 0) {
+       ::socketpair(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0, touch_pair) != 0 ||
+       (storage_directory >= 0 &&
+        ::socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, storage_pair) != 0)) {
         if(control_pair[0] >= 0) ::close(control_pair[0]);
         if(control_pair[1] >= 0) ::close(control_pair[1]);
+        if(touch_pair[0] >= 0) ::close(touch_pair[0]);
+        if(touch_pair[1] >= 0) ::close(touch_pair[1]);
+        if(storage_pair[0] >= 0) ::close(storage_pair[0]);
+        if(storage_pair[1] >= 0) ::close(storage_pair[1]);
         outcome.result = 76;
         return outcome;
     }
@@ -747,9 +1035,34 @@ ForegroundOutcome run_foreground(
     FileDescriptor child_control(control_pair[1]);
     FileDescriptor parent_touch(touch_pair[0]);
     FileDescriptor child_touch(touch_pair[1]);
+    FileDescriptor parent_storage(storage_pair[0]);
+    FileDescriptor child_storage(storage_pair[1]);
+    auto drm = open_drm_device(profile);
+    if(!drm.valid()) {
+        outcome.result = 87;
+        return outcome;
+    }
+    if(parent_storage.valid()) {
+        const int buffer_size = static_cast<int>(lvgl_platform::kMaximumStoragePacketSize * 2U);
+            if(::setsockopt(
+                   parent_storage.get(), SOL_SOCKET, SO_RCVBUF, &buffer_size,
+                   sizeof(buffer_size)) != 0 ||
+               ::setsockopt(
+                   parent_storage.get(), SOL_SOCKET, SO_SNDBUF, &buffer_size,
+                   sizeof(buffer_size)) != 0 ||
+               ::setsockopt(
+                   child_storage.get(), SOL_SOCKET, SO_RCVBUF, &buffer_size,
+                   sizeof(buffer_size)) != 0 ||
+               ::setsockopt(
+                   child_storage.get(), SOL_SOCKET, SO_SNDBUF, &buffer_size,
+               sizeof(buffer_size)) != 0) {
+            outcome.result = 88;
+            return outcome;
+        }
+    }
     const pid_t child = start_program(
-        executable, child_control.get(), child_touch.get(), registry, storage, program_id, profile,
-        previous_error);
+        executable, child_control.get(), child_touch.get(), registry, child_storage.get(),
+        drm.get(), program_id, policy, profile, previous_error);
     if(child <= 1) {
         outcome.result = 77;
         return outcome;
@@ -757,6 +1070,7 @@ ForegroundOutcome run_foreground(
     ::setpgid(child, child);
     child_control.reset();
     child_touch.reset();
+    child_storage.reset();
 
     const auto ready_deadline = monotonic_microseconds() +
                                 static_cast<std::uint64_t>(kReadyTimeoutMilliseconds) * 1000ULL;
@@ -771,8 +1085,9 @@ ForegroundOutcome run_foreground(
         pollfd descriptors[] {
             {parent_control.get(), POLLIN | POLLHUP, 0},
             {external_touch_socket, static_cast<short>(ready ? POLLIN : 0), 0},
+            {parent_storage.get(), static_cast<short>(parent_storage.valid() ? POLLIN : 0), 0},
         };
-        const int polled = ::poll(descriptors, 2, 100);
+        const int polled = ::poll(descriptors, 3, 100);
         if(polled < 0 && errno != EINTR) {
             outcome.result = 78;
             break;
@@ -831,6 +1146,13 @@ ForegroundOutcome run_foreground(
                     break;
                 }
             }
+        }
+        if(polled > 0 && parent_storage.valid() &&
+           (descriptors[2].revents & POLLIN) != 0 &&
+           !handle_storage_request(
+               parent_storage.get(), storage_directory, policy.limits)) {
+            outcome.result = 89;
+            break;
         }
         if(!ready && monotonic_microseconds() >= ready_deadline) {
             outcome.result = 83;
@@ -914,9 +1236,9 @@ int main(int argc, char** argv)
             result = 74;
             break;
         }
-        bool private_storage = false;
+        ProgramPolicy policy;
         auto executable = open_verified_program(
-            release, release.profile, foreground, &private_storage);
+            release, release.profile, foreground, &policy);
         if(!executable.valid()) {
             if(foreground != "top.lvgl.desktop") {
                 previous_error = "应用入口未包含在已验证的平台发行版中";
@@ -935,7 +1257,7 @@ int main(int argc, char** argv)
             }
         }
         FileDescriptor storage;
-        if(private_storage) {
+        if(policy.private_storage) {
             storage = ensure_private_storage(foreground);
             if(!storage.valid()) {
                 if(foreground != "top.lvgl.desktop") {
@@ -949,7 +1271,8 @@ int main(int argc, char** argv)
         }
         const auto outcome = run_foreground(
             executable.get(), foreground, previous_error, release.profile,
-            run_directory.get(), touch_socket.get(), registry.get(), storage.get(), router, status);
+            run_directory.get(), touch_socket.get(), registry.get(), storage.get(), policy,
+            router, status);
         previous_error.clear();
         if(g_stop != 0) {
             result = outcome.result == 0 ? 143 : outcome.result;
