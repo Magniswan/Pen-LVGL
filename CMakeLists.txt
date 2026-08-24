@@ -284,6 +284,18 @@ if(EXISTS "${DEVICE_LIBDRM_PATH}")
         -Wall -Wextra -Wpedantic -Werror -Wno-pedantic
     )
 
+    add_executable(game_2048
+        apps/game-2048/main.cpp
+        apps/game-2048/game_2048_model.cpp
+        apps/game-2048/game_2048_ui.cpp
+    )
+    set_target_properties(game_2048 PROPERTIES OUTPUT_NAME "lvgl-2048")
+    target_include_directories(game_2048 PRIVATE src apps/game-2048)
+    target_link_libraries(game_2048 PRIVATE platform_runtime app_shell)
+    target_compile_options(game_2048 PRIVATE
+        -Wall -Wextra -Wpedantic -Werror -Wno-pedantic
+    )
+
     install(TARGETS
         drm_probe
         drm_color_test
@@ -291,6 +303,7 @@ if(EXISTS "${DEVICE_LIBDRM_PATH}")
         lvgl_launcher
         lvgl_poc
         focus_timer
+        game_2048
         RUNTIME DESTINATION bin
     )
 endif()
