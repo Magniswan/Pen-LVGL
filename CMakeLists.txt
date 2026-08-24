@@ -53,6 +53,7 @@ add_library(lvgl_platform_contract STATIC
     platform/src/package/rollback_policy.cpp
     platform/src/package/package_verifier.cpp
     platform/src/profile/device_profile.cpp
+    platform/src/storage/safe_path.cpp
     platform/src/trust/trust_store.cpp
 )
 target_include_directories(lvgl_platform_contract PUBLIC

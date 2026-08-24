@@ -2,6 +2,7 @@
 #include "lvgl_platform/device_profile.h"
 #include "lvgl_platform/package_verifier.h"
 #include "lvgl_platform/rollback_policy.h"
+#include "lvgl_platform/safe_path.h"
 #include "lvgl_platform/touch_protocol.h"
 #include "lvgl_platform/trust_store.h"
 
@@ -255,6 +256,12 @@ void test_trust_and_rollback_policy()
     lvgl_platform::Sha512Digest package_digest {};
     expect(crypto->sha512(bytes.data(), bytes.size(), package_digest),
            "policy test computes a stable whole-package digest");
+#if defined(_WIN32)
+    expect(lvgl_platform::stage_verified_release(
+               "C:/unused", bytes.data(), bytes.size(), candidate, package_digest).status ==
+               lvgl_platform::StorageStatus::unsupported_platform,
+           "safe release extraction fails explicitly on non-POSIX hosts");
+#endif
 
     const lvgl_platform::InstallPolicyContext context {
         "1.0.0", "1.0", "youdao-y01-4.8.6", "aarch64", {"storage.private"}};

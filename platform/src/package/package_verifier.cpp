@@ -491,6 +491,7 @@ PackageVerification verify_package(
 
     const std::uint64_t table_start = kHeaderSize + manifest_size;
     const std::uint64_t payload_start = table_start + table_size;
+    result.payload_start = payload_start;
     std::uint64_t cursor = table_start;
     std::uint64_t expected_offset = 0;
     std::string previous;

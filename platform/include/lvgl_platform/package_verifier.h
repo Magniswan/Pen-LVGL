@@ -59,6 +59,7 @@ struct PackageVerification {
     bool development {false};
     bool signature_verified {false};
     std::uint64_t unsigned_size {0};
+    std::uint64_t payload_start {0};
     VerifiedPackageManifest manifest;
 
     bool ok() const noexcept { return status == PackageStatus::verified; }
