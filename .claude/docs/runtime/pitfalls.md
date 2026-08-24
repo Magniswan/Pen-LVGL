@@ -7,5 +7,5 @@
 5. 发起 launch/home 的手势应已结束，避免把未结束 contact 交给下一应用。
 6. 不要把 app ID 拼成可执行路径；用已验证 manifest entry 和目录 FD。
 7. 不要让普通应用继承 registry、安装目录或不相关 FD；child 继承集合必须显式。
-8. `no_new_privs` 不是 sandbox。商用 profile 还需要独立 UID/GID、rlimit/seccomp/cgroup/namespace 能力认证。
+8. 不要放宽 seccomp 以修复未知崩溃；先在认证固件捕获所需 syscall，并逐项证明最小参数约束。现有 UID/GID、rlimit、seccomp 仍需 cgroup/namespace 和真机认证补全。
 9. 不要对非目标设备运行设备脚本；当前 Nexus 4 明确不在授权范围。

@@ -53,7 +53,7 @@ std::vector<std::uint8_t> loaded;
 context.storage.read("state.v1", loaded, state.size());
 ```
 
-记录名只允许小写 ASCII、数字、点、下划线和连字符，不能以点开头或包含 `..`。写入采用同目录临时文件、`fsync` 与 `renameat`；应用仍需自行定义版本、长度、校验和及严格反序列化。
+记录名只允许小写 ASCII、数字、点、下划线和连字符，不能以点开头或包含 `..`。应用请求经过有界 broker 协议，sessiond 强制 manifest 的 `maxFiles`/`dataMiB`，并以临时文件、`fsync` 与 `renameat` 提交；应用仍需自行定义版本、长度、校验和及严格反序列化。不要解析 `LVGL_APP_STORAGE_FD`。
 
 ## 4. Build
 
@@ -86,6 +86,6 @@ dev 包可用于格式、可复现性和签名前检查，但设备安装器会�
 
 ## Current SDK limitations
 
-- private storage record API 已落地，但 quota 尚未强制；不要自行创建共享可写目录。
-- runtime sandbox（独立 UID/seccomp/namespace/cgroup）尚未强制。
+- private storage read/write 与 quota 已强制，但 v1 尚无删除、列举或迁移 API；不要自行创建共享可写目录。
+- runtime 已强制独立 UID/GID、rlimit 与 AArch64 seccomp；cgroup、只读 mount namespace 和目标固件 sandbox 认证尚未完成。
 - 只支持 SDK ABI `1.0`、offline-v1 和一个认证 profile family。

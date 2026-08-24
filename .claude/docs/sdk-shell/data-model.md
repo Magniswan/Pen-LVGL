@@ -10,6 +10,7 @@
 - `entry` 指向包内唯一 0755 executable。
 - `supportedProfiles`/`supportedMachines` 必须排序唯一且反映实际认证。
 - v1 capability 闭合 allowlist 当前应用仅使用 `storage.private`。
+- `limits.memoryMiB`/`cpuSeconds` 由 sessiond rlimit 强制；`maxFiles`/`dataMiB` 由 private storage broker 强制，不能填占位值。
 - `onlinePolicy.mode` 固定 `offline-v1`；在线授权/吊销是后续 TODO。
 
 ## RuntimeContext

@@ -30,10 +30,11 @@
 
 ## Storage
 
-- `available()`：sessiond 是否授予当前 app 私有目录 FD。
-- `read(record, output, maximum_size)`：只读 root-owned 0600、单硬链接 regular record；拒绝 symlink、空文件、超限和尾随增长。
-- `write_atomic(record, data, size, maximum_size)`：0600 随机临时文件 → file fsync → 同目录 rename → directory fsync。
+- `available()`：sessiond 是否授予当前 app 私有 storage broker。
+- `read(record, output, maximum_size)`：通过 canonical `SOCK_SEQPACKET` 请求读取 root-owned 0600、单硬链接 regular record；拒绝 symlink、空文件、超限和尾随增长。
+- `write_atomic(record, data, size, maximum_size)`：broker 强制 `maxFiles`/`dataMiB` 后执行 0600 随机临时文件 → file fsync → 同目录 rename → directory fsync。
 - record 不是路径；只允许闭合字符集、最长 64 bytes、非隐藏名且不含 `..`。
+- 调用是同步的，单次最多 64 KiB，超时、协议错误、quota 或损坏统一失败；应用不得读取/传递继承 socket FD。
 
 ## Packaging
 

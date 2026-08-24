@@ -15,7 +15,8 @@
 | 伪造 desktop registry/launch path | sessiond-owned canonical registry；desktop 只传 app ID |
 | 触控重放/乱序/越界 | per-session nonce、strict sequence、monotonic age、contact lifecycle |
 | 利用 broad process kill | 只监督 exact child PID；源码测试禁止 broad kill |
-| 路径注入/链接替换应用状态 | sessiond 仅传 0700 app dir FD；记录名闭合校验、`openat(O_NOFOLLOW)`、0600/nlink 检查、原子替换 |
+| 路径注入/链接替换/配额绕过应用状态 | 应用只持有 broker socket；sessiond 保持 0700 dirfd，闭合 record、`O_NOFOLLOW`、0600/nlink/type/bounds、manifest quota 与原子替换 |
+| 恶意签名应用横向移动 | UID/GID 独立且碰撞拒绝；rlimit；不可 dump；AArch64 seccomp 禁止网络/派生/挂载/写路径/exec，并限制 DRM ioctl |
 | patch 普通用户态文件 | owner/mode/hash/signature 检查，失败关闭 |
 | 已控制 root/内核 | 无法仅靠用户态彻底防御；见下方边界 |
 
@@ -29,7 +30,7 @@ root 可改内核、`ptrace`/写内存、替换动态链接器、拦截系统调
 2. verified boot/dm-verity，覆盖内核、init、动态链接器和平台 verifier；
 3. TEE/secure element 保存设备身份和 monotonic state；
 4. IMA appraisal 或等价 executable measurement；
-5. 最小权限 UID、seccomp、rlimit/cgroup、只读 mount namespace；
+5. 最小权限 UID、seccomp、rlimit/cgroup、只读 mount namespace；本仓库已完成前三项，后两项仍需目标内核认证；
 6. 可轮换/吊销的 offline release key hierarchy；
 7. 可审计生产构建和独立复现/签名验证。
 
@@ -44,8 +45,8 @@ root 可改内核、`ptrace`/写内存、替换动态链接器、拦截系统调
 
 ## Residual risks
 
-- 前台应用当前仍继承 root 身份，尚未完成 UID/seccomp/namespace 强制隔离。
+- 前台应用已强制非 root UID/GID、rlimit 与 AArch64 seccomp，但尚未增加 cgroup/read-only mount namespace，也没有目标固件 syscall/逃逸测试证据。
 - Y01 hole/overlay profile 尚未真机认证。
 - ADB scripts 尚缺 serial allowlist + hardware identity gate。
-- 私有存储 FD 与原子记录已实现，但 quota、独立 UID 和 mount namespace 尚未完成；因此不宣称能隔离已控制 root 的恶意应用。
+- storage broker 已强制 quota 与原子记录，但断电、磁盘满和恶意并发的目标端集成矩阵尚未完成。
 - 在线 entitlement/revocation 属于后续阶段；offline v1 不依赖网络。

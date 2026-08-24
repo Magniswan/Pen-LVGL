@@ -9,4 +9,4 @@
 7. 不要把 `.lvapp.dev` 改扩展名伪装成正式包；签名 envelope 和 manifest key ID 都会失败。
 8. 不要把私钥传给 CMake、manager、设备或 CI 普通构建；签名是隔离的发布步骤。
 9. 私有状态只用 `RuntimeContext.storage` 固定记录；不要解析 `LVGL_APP_STORAGE_FD`、拼接路径或绕过单记录上限。
-10. 当前 API 尚无总 quota；应用必须设置紧凑的 `maximum_size`，平台 quota 完成前不能把它当大文件仓库。
+10. signed manifest 的 `maxFiles`/`dataMiB` 是总 quota，调用参数 `maximum_size` 是更小的单记录上限；两者都不能把 storage 当大文件仓库。

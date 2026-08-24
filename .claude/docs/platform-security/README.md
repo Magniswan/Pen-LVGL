@@ -38,6 +38,8 @@ fixed inbox regular FD
 
 目录必须 root-owned 且 group/other 不可写。所有向下遍历使用目录 FD、`openat` 与 `O_NOFOLLOW`；应用 ID 只经过闭合语法验证后作为单个目录分量。
 
+应用永远拿不到上述 storage 目录 FD。sessiond 通过 canonical broker 协议代理固定 record，并依据已验签 manifest 强制 `maxFiles`/`dataMiB`；任何未知目录项、owner/mode/nlink/type/size 异常都会把存储视为损坏并失败关闭。
+
 ## 对外 API
 
 - 包、策略、安装与收件箱方法见 [api-package-storage.md](api-package-storage.md)。

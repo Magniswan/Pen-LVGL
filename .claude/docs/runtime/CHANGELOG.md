@@ -2,6 +2,33 @@
 
 > 最新变更在最上方。
 
+## [2026-08-24] 前台应用降权并安装强制 syscall sandbox
+
+**类型**: security
+**提交**: bac2474
+**风险**: HIGH
+
+### 变更文件
+
+| 文件 | 变更 | 说明 |
+|---|---:|---|
+| `platform/src/session/session_daemon.cpp` | major | UID/GID、rlimit、DRM FD、quota broker 与精确 child 环境 |
+| `src/runtime/runtime_sandbox.cpp` | new | AArch64 seccomp arch/flag/fd/ioctl allowlist |
+| `src/platform/drm/drm_backend.cpp` | major | hole 会话必须消费 sessiond 已验证 DRM FD |
+| `platform/src/ipc/storage_protocol.cpp` | new | canonical request/response 与 quota model |
+
+### 影响范围
+
+- **运行身份**: 应用不再是 root；碰撞 UID、降权失败或 sandbox 安装失败均拒绝 READY。
+- **资源**: manifest limits 现在具有强制含义；过小 memory/CPU/file quota 会导致应用失败。
+- **兼容性**: hole runtime 要求 AArch64 seccomp；独立主机开发运行无 marker 时不启用。
+
+### 回滚指南
+
+- 回滚：`git revert bac2474`
+- 检查：同时回滚 AppStorage broker 客户端和 sessiond server，不能混用旧目录 FD 协议。
+- 副作用：回滚显著扩大签名应用攻陷后的权限，不得作为生产修复。
+
 ## [2026-08-24] 按 capability 授予应用私有存储 FD
 
 **类型**: feat

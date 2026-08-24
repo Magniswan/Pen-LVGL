@@ -53,7 +53,8 @@ docs/           面向开发者、发布者和运维者的正式文档
 Falcon miniapp + <hole> ─touch datagram─> lvgl-sessiond (root trust boundary)
                                            ├─ reverify signed platform release
 official .lvapp -> fixed inbox -> installer ├─ derive read-only desktop registry
-                         │                  └─ fexecve one exact foreground child
+                         │                  ├─ quota storage broker + inherited DRM FD
+                         │                  └─ fexecve one non-root rlimit/seccomp child
                          └─ payload releases + separate dual-slot anti-rollback state
 ```
 
@@ -81,6 +82,7 @@ official .lvapp -> fixed inbox -> installer ├─ derive read-only desktop regi
 6. 每次启动动态应用都必须重新验签、比对当前状态摘要并逐文件复测。
 7. 会话只可向自己精确 fork 的子 PID 发信号；禁止 `pkill`、`killall` 或按名称终止。
 8. 当前目标 profile 未经真机认证，构建成功不能等同于硬件兼容。
+9. AppStorage 只允许使用 SDK broker API；把目录 FD 交给应用会绕过 quota 和记录策略。
 
 ## 模块变更日志
 

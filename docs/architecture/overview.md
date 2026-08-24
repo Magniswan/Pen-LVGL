@@ -13,7 +13,10 @@ Falcon launcher (alive)
 lvgl-sessiond (policy authority)
   ├─ reverify platform/profile
   ├─ canonicalize installed app registry ──FD──> LVGL desktop
-  ├─ verify/fexecve selected entry ────────────> LVGL app
+  ├─ root-owned quota storage broker ──socket──> LVGL app
+  ├─ open exact DRM device ───────────────FD───> LVGL app
+  ├─ verify/fexecve + drop UID/GID + rlimit ───> LVGL app
+  │                                               └─ mandatory AArch64 seccomp
   └─ exact-child READY/crash/home/exit supervision
 ```
 
@@ -40,8 +43,13 @@ policy root 与可移除 payload 分开，避免卸载等价于清空 release/se
 2. sessiond 生成最大 64 KiB/64 apps 的 canonical registry，通过只读 FD 传给 desktop。
 3. desktop 只发送 canonical stable app ID。
 4. sessiond 重新验证目标 profile/machine/ABI/capabilities/state/digest/files。
-5. sessiond 从已打开、已验证的 entry FD 执行 `fexecve`。
-6. child 首次成功 present 后发送 READY；超时/崩溃则回 desktop。
+5. sessiond 拒绝 UID 映射碰撞，打开精确 DRM FD，应用 `setgroups(0)`、独立非 root UID/GID 与 manifest rlimit 后，从已验证 entry FD 执行 `fexecve`。
+6. runtime 完成 DRM/input 初始化后安装强制 AArch64 seccomp：禁止进程/网络/挂载/写路径/可执行映射，DRM ioctl 仅允许 `SETPLANE`、`RMFB`、`DESTROY_DUMB`。
+7. child 首次成功 present 后发送 READY；超时/崩溃则回 desktop。
+
+## Private storage
+
+`storage.private` 不再把目录 FD 交给应用。sessiond 保持 root-owned 0700 目录和 0600 records，只给应用一个 `SOCK_SEQPACKET` broker endpoint。固定 96-byte v1 header 绑定 command/request ID/record/size；包最大 65,632 bytes，单记录最大 64 KiB。每次读写都重新扫描 owner/type/mode/nlink/size，按已签名 manifest 的 `maxFiles` 与 `dataMiB` 强制 quota，写入使用随机临时文件、file fsync、rename 和 directory fsync。
 
 ## Input and display
 
@@ -56,6 +64,7 @@ DRM runtime 只使用 signed profile 中已认证的 connector/CRTC/overlay/rect
 - LVAPP format：1 / `LVAPP001`
 - session control：128-byte little-endian v1
 - touch protocol：56-byte little-endian v1
+- storage broker：96-byte header / `LVSTOR1` / v1
 - application identity：小写 canonical reverse-domain ID
 
 不兼容变化必须提升对应 version/ABI/format，而不是静默复用旧值。

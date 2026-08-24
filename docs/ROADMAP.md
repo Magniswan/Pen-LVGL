@@ -4,9 +4,9 @@
 
 ## P0 — 商用安全门禁
 
-- 为每个 app 配置独立非 root UID/GID；落地 `setgroups/setresgid/setresuid`。
-- 按 manifest 强制 rlimit、seccomp allowlist、cgroup CPU/memory 与只读 mount namespace。
-- 为现有 app-private storage FD/原子记录接口增加强制 quota；在独立 UID/mount namespace 落地后验证真正的跨 app 隔离。
+- 在认证目标内核上增加并验证 cgroup v2 CPU/memory 与只读 mount namespace；不支持所需内核能力时保持失败关闭。
+- 对 AArch64 seccomp 白名单做目标固件 syscall capture、负向逃逸测试和独立审计；当前实现已强制 UID/GID、rlimit、no-new-privs 与 seccomp，但尚无真机证据。
+- 为 storage broker 增加断电/磁盘满/并发恶意请求集成测试；当前已强制 manifest 的 `maxFiles`/`dataMiB` quota。
 - 增加应用卸载/隔离/rollback UI；保留 anti-rollback policy 和审计记录。
 - ADB 脚本增加 serial allowlist + signed device identity gate。
 - 为 package/state/session parser 加 coverage-guided fuzzing 与 sanitizer CI。
@@ -25,6 +25,7 @@
 - 为 2048 离屏烟测增加逐帧 motion/reduced-motion golden image regression，并在认证硬件完成手势与帧时间基线。
 - 完成 capability broker（audio/dictionary/haptics/scanner/network）。
 - 增加应用图标/本地化 metadata 的签名格式与 desktop cache。
+- 为 storage broker 增加删除/列举等经过审核的最小 API；v1 仍只有固定记录 read/atomic-write。
 
 ## P1 — 发布运维
 

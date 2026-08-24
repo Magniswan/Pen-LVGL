@@ -2,6 +2,26 @@
 
 > 最新变更在最上方；排查签名、安装或状态问题时优先阅读。
 
+## [2026-08-24] 强制应用隔离与存储配额
+
+**类型**: security
+**提交**: bac2474
+**风险**: HIGH
+
+### 安全性质
+
+- 验签清单保留 memory/CPU/maxFiles/data limits，sessiond 不再丢弃已认证限制。
+- 每个前台 app 使用碰撞检测的独立非 root UID/GID、不可 dump、no-new-privs 与 rlimit。
+- AArch64 runtime 强制 seccomp，禁止网络/进程/挂载/写路径/exec mapping，并把 DRM ioctl 缩到运行期 3 项。
+- storage.private 改为 root-owned `SOCK_SEQPACKET` broker，强制 record bounds、owner/mode/nlink/type、`maxFiles`/`dataMiB` 和 fsync+rename。
+- 不改变 root/内核攻击边界；cgroup、只读 mount namespace 和目标内核认证仍未完成。
+
+### 回滚指南
+
+- 回滚：`git revert bac2474`
+- 检查：回滚会恢复目录 FD 直传并取消 quota/non-root/seccomp，不应发布为安全更新。
+- 数据：不要删除 `/userdisk/apps/lvgl-data`；broker 会清理合法的旧 `.write-*` 临时文件。
+
 ## [2026-08-24] 封闭应用私有记录路径
 
 **类型**: security

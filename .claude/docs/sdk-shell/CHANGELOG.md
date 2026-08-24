@@ -2,6 +2,31 @@
 
 > 最新变更在最上方。
 
+## [2026-08-24] AppStorage 切换到配额 broker
+
+**类型**: security
+**提交**: bac2474
+**风险**: HIGH
+
+### 变更文件
+
+| 文件 | 变更 | 说明 |
+|---|---:|---|
+| `src/runtime/app_storage.cpp` | major | 验证 root peer、同步有界 request/response、2 秒超时 |
+| `src/runtime/app_storage.h` | minor | 内部目录 FD 替换为 socket/request ID |
+| `platform/include/lvgl_platform/storage_protocol.h` | new | 64 KiB record 与 96-byte header 契约 |
+
+### 影响范围
+
+- **源 API**: `available/read/write_atomic` 保持不变。
+- **内部 ABI**: `AppStorage` 对象布局变化，所有应用必须全量重编；SDK ABI 尚未承诺二进制稳定。
+- **行为**: quota、broker 超时、peer/协议错误和存储损坏都会返回 false。
+
+### 回滚指南
+
+- 回滚：`git revert bac2474`
+- 检查：sessiond 与 runtime 必须成对回滚；保留现有用户 records。
+
 ## [2026-08-24] 新增有界原子 AppStorage API
 
 **类型**: feat

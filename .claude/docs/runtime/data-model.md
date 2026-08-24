@@ -19,3 +19,11 @@
 ## Registry FD
 
 桌面额外继承 `LVGL_APP_REGISTRY_FD`。目标端若缺少或无法验证该 FD，只显示桌面自身，不使用硬编码应用 fallback。
+
+## Storage Broker v1
+
+`SOCK_SEQPACKET` 上每个 packet 是 96-byte `LVSTOR1` header 加最多 64 KiB data。request 包含 read/write、非零 request ID、canonical record、单记录 maximum；response 回显 command/ID 并返回闭合 status。reserved/padding 必须全零，错误 response 不带 data。sessiond 用 authenticated `maxFiles`/`dataMiB` 评估整个 app 目录，不信任应用自报 quota。
+
+## Program Policy
+
+`ApplicationResourceLimits` 的 memory MiB、CPU seconds、maximum files、data MiB 来自已验签 manifest。sessiond 派生碰撞检测 UID/GID，设置 AS/CPU/core/file-size/open-files/processes/memlock/stack rlimit；runtime marker 存在时，非 AArch64 或 seccomp 安装失败均拒绝运行。
