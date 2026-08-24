@@ -62,4 +62,6 @@ sessiond 不接受未知字段、重复字段、越界矩形或未认证 hole。
 
 ## 设备操作边界
 
-设备脚本要求明确且唯一的 ADB 目标，但“唯一设备”不等于“正确设备”。当前附加 Nexus 4 不在目标范围，禁止执行任何安装、卸载或写入。商用脚本后续应增加 serial allowlist + 设备 identity 双重确认。
+五个设备脚本均要求显式 `-Serial` 和非零 `-ExpectedIdentitySha256`。所有业务命令自动加 `adb -s <serial>`；脚本先确认该 serial 的状态恰为 `device`，再按 manager 的同一字节 framing 复算 identity，任何失败都不进入业务操作。多个设备可以同时连接，因此不再依赖“只连接一个设备”。当前附加 Nexus 4 不在目标范围，禁止对它执行任何设备操作。
+
+identity 为 `SHA-256(machine || NUL || local_packages.json || NUL || cfg.json || NUL)`，文件使用原始字节。它只能防止误选，不能替代官方签名、可信启动或硬件 attestation；生产值必须来自认证记录并与 manager 构建输入一致。

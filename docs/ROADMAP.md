@@ -8,7 +8,7 @@
 - 对 AArch64 seccomp 白名单做目标固件 syscall capture、负向逃逸测试和独立审计；当前实现已强制 UID/GID、rlimit、no-new-privs 与 seccomp，但尚无真机证据。
 - 为 storage broker 增加断电/磁盘满/并发恶意请求集成测试；当前已强制 manifest 的 `maxFiles`/`dataMiB` quota。
 - 增加应用卸载/隔离/rollback UI；保留 anti-rollback policy 和审计记录。
-- ADB 脚本增加 serial allowlist + signed device identity gate。
+- 把现有 ADB `-Serial` + identity digest 防误操作门禁升级为“官方签名的 release authorization”；当前显式 digest 尚不是硬件 attestation，也不能抵御能伪造 ADB 响应的 root 对手。
 - 为 package/state/session parser 加 coverage-guided fuzzing 与 sanitizer CI。
 - 平台/app release 安装与启动路径完成独立安全审计。
 

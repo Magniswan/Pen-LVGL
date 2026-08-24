@@ -2,6 +2,27 @@
 
 > 最新变更在最上方。
 
+## [2026-08-24] 固定 ADB 目标并复验设备 identity
+
+**类型**: security
+**提交**: ba391e3
+**风险**: HIGH
+
+### 变更文件
+
+| 文件 | 说明 |
+|---|---|
+| `scripts/device_app_common.ps1` | 所有业务命令强制 `-s`，按 manager framing 复算 identity |
+| `scripts/install_device_app.ps1` / `uninstall_device_app.ps1` / `status_device_app.ps1` | serial/digest 改为必填 |
+| `scripts/install_manager.ps1` / `uninstall_manager.ps1` | serial/digest 改为必填 |
+| `tests/host/device-script-source.test.js` | 覆盖 target pinning、framing 与失败关闭契约 |
+
+### 影响范围
+
+- **兼容性**: 旧的无 serial/digest 调用现在失败；自动化必须从认证记录显式传入。
+- **安全边界**: 防止多设备环境误操作，但不把 operator-provided digest 声明为 root-resistant attestation。
+- **回滚**: `git revert ba391e3` 会恢复隐式设备选择，禁止在生产操作链使用。
+
 ## [2026-08-24] 新增确定性签名应用包工具
 
 **类型**: feat  

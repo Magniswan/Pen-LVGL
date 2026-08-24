@@ -38,7 +38,8 @@ node tools/lvapp/cli.mjs verify --input app.lvapp --public-key public.pem
 - production public key 与包 signer key ID 一致；独立 verifier 成功。
 - profile 已真机认证，manager device identity 与目标批次一致。
 - artifacts 带 SHA-256、版本、release counter、security epoch 和可复现构建记录。
-- 不对未知或仅“唯一”的 ADB 设备执行操作；必须额外核验 serial/identity。
+- host device scripts 必须提供认证 serial/identity；所有业务命令被强制 pin 到 serial，并在业务操作前复算 identity。
+- operator-provided identity 只防误操作；正式发布仍需 manager 内嵌 identity、官方签名包和可信启动链。
 
 ## 详细文档
 
@@ -46,3 +47,4 @@ node tools/lvapp/cli.mjs verify --input app.lvapp --public-key public.pem
 - [data-model.md](data-model.md)：binary layout、manifest 与签名 envelope。
 - [pitfalls.md](pitfalls.md)：密钥、可复现性与设备发布注意事项。
 - [CHANGELOG.md](CHANGELOG.md)：工具链变更。
+- [正式发布流程](../../../docs/release/release-process.md)：设备 identity 计算、脚本参数和发布门禁。

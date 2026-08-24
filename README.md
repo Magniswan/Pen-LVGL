@@ -65,10 +65,10 @@ cmake --build build/platform-aarch64 --target \
 - [架构总览](docs/architecture/overview.md)
 - [安全威胁模型](docs/security/threat-model.md) 与 [安全政策](SECURITY.md)
 - [SDK 快速开始](docs/sdk/quickstart.md) 和 [manifest 参考](docs/sdk/manifest-reference.md)
-- [发布流程](docs/release/release-process.md)
+- [发布与认证设备操作流程](docs/release/release-process.md)
 - [运行时排障](docs/troubleshooting/runtime.md)
 - [后续代办](docs/ROADMAP.md)
 
 ## 设备边界
 
-设备脚本只适用于已认证的 AArch64 有道词典笔。当前附加的 Nexus 4 明确不在范围内，本工程不会对它执行安装、卸载或写操作。任何真机操作前还必须补齐 serial allowlist 和设备 identity 门禁。
+设备脚本只适用于已认证的 AArch64 有道词典笔，且全部强制提供精确 `-Serial` 和认证时记录的 `-ExpectedIdentitySha256`；任一不匹配都会在安装、卸载或状态读取前失败。当前附加的 Nexus 4 明确不在范围内，本工程不会对它执行任何设备操作。摘要参数防止操作员选错设备，不是 root-resistant attestation；生产 manager 仍独立使用内嵌 identity 和官方签名包失败关闭。

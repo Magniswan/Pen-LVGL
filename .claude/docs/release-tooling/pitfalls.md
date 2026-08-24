@@ -16,6 +16,6 @@ dev 包故意无签名且 signing key ID 为零，设备端永远拒绝。扩展
 
 离线 v1 仍需要维护每 app 单调 `releaseCounter` 和必要时递增的 `securityEpoch`。重复/降低 counter 会被设备 high-water 拒绝。未来在线 entitlement/revocation 仅进入 TODO，不改变 v1 的官方签名要求。
 
-## ADB 脚本仍需加强目标认证
+## ADB identity 是防误操作门禁，不是 attestation
 
-当前脚本检查单设备、ABI 和 AppID owner，但尚无 serial allowlist/硬件 identity gate。连接的 Nexus 4 绝不能用于本项目的安装测试；正式发布前必须补上目标身份门禁。
+当前脚本拒绝隐式目标，要求精确 serial 和 64 位非零 identity digest，并把每条业务命令 pin 到该 serial。不要把调用者传入的 digest 当作官方授权：root 设备可伪造 ADB 响应，恶意操作员也可传入另一个摘要。生产 manager 必须把认证 identity 与官方签名 payload 编译绑定；后续仍需官方签名 release authorization/硬件 attestation。连接的 Nexus 4 绝不能作为目标。

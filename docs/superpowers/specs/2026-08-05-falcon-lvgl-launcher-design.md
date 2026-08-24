@@ -193,7 +193,7 @@ scripts/status_device_app.ps1
 scripts/uninstall_device_app.ps1
 ```
 
-`install_device_app.ps1` requires exactly one connected device and performs:
+The current `install_device_app.ps1` supersedes this early design: it requires an explicit serial and certified identity digest, pins every operation to that serial, and then performs:
 
 1. Read-only profile, firmware, ABI, free-space, and AppID checks.
 2. SHA-256 verification of every ELF, script, resource, and launcher package.
