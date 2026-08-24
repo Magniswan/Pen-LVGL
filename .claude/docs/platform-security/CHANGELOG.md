@@ -2,6 +2,25 @@
 
 > 最新变更在最上方；排查签名、安装或状态问题时优先阅读。
 
+## [2026-08-24] 封闭应用私有记录路径
+
+**类型**: security  
+**提交**: 0f196ed  
+**风险**: HIGH
+
+### 安全性质
+
+- sessiond 只为有效 app ID 和 `storage.private` 创建 root-owned 0700 目录。
+- 应用只继承精确 dirfd；环境不包含 caller-selected path、root 或 key。
+- record read/write 使用 `openat`/`O_NOFOLLOW`、0600、owner/nlink/type/bounds 检查与 fsync+rename。
+- root/内核攻击者仍可 patch 进程；独立 UID、namespace 和 quota 未完成，不能据此宣称 root 隔离。
+
+### 回滚指南
+
+- 回滚：`git revert 0f196ed`
+- 检查：`lvgl-data` 是保留数据目录；回滚不应擅自删除用户状态。
+- 副作用：所有声明 private storage 的应用将得到 unavailable 状态。
+
 ## [2026-08-24] 安装固定收件箱中的官方应用
 
 **类型**: feat  

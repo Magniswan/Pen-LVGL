@@ -2,6 +2,33 @@
 
 > 最新变更在最上方。
 
+## [2026-08-24] 按 capability 授予应用私有存储 FD
+
+**类型**: feat  
+**提交**: 0f196ed  
+**风险**: HIGH
+
+### 变更文件
+
+| 文件 | 变更 | 说明 |
+|---|---:|---|
+| `platform/src/session/session_daemon.cpp` | +81/-8 | 创建/验证 0700 app 目录并继承精确 FD |
+| `src/runtime/platform_runtime.cpp` | +3/-1 | 构造并注入 `AppStorage` |
+| `src/runtime/platform_runtime.h` | +2/-0 | 扩展 `RuntimeContext` |
+| `tests/host/storage-source.test.js` | +35/-0 | capability、no-follow 与固定记录约束 |
+
+### 影响范围
+
+- **API**: `RuntimeContext` 增加 `AppStorage& storage`，需同步重编所有应用。
+- **跨模块**: sessiond、runtime、SDK 应用和声明 `storage.private` 的 manifest。
+- **安全**: 只传 dirfd，不传 path/root/key；quota 与非 root sandbox 仍是 P0。
+
+### 回滚指南
+
+- 回滚：`git revert 0f196ed`
+- 检查：所有 `RuntimeApplication::create` 调用点及 2048 构造函数。
+- 副作用：已写入的 `lvgl-data` 不会自动删除，但应用将不再获得 storage FD。
+
 ## [2026-08-24] 独立监督前台应用
 
 **类型**: feat  

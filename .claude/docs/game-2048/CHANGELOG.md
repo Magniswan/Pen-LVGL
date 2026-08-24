@@ -2,6 +2,35 @@
 
 > 最新变更在最上方。
 
+## [2026-08-24] 完成逐 tile 动画与原子恢复
+
+**类型**: feat  
+**提交**: 0f196ed  
+**风险**: MEDIUM
+
+### 变更文件
+
+| 文件 | 变更 | 说明 |
+|---|---:|---|
+| `apps/game-2048/game_2048_model.cpp` | +85/-14 | 物理 motion、持久态验证与恢复 |
+| `apps/game-2048/game_2048_persistence.cpp` | +126/-0 | 128-byte canonical record 与 CRC32 |
+| `apps/game-2048/game_2048_ui.cpp` | +257/-51 | 逐 tile、merge、spawn、score 动画与保存时机 |
+| `tests/host/game_2048_model_test.cpp` | +45/-0 | motion、round-trip 与 tamper tests |
+| `tests/host/game_2048_visual_test.cpp` | +86/-0 | 960×266 离屏视觉烟测 |
+
+### 影响范围
+
+- **API**: 内部模型新增 `persistent_state()` / `restore_state()`；UI 接收 `AppStorage`。
+- **数据模型**: 新增 versioned `state.v1`，包含 board/score/best/phase/RNG/undo。
+- **动画**: source tile 精确汇聚到 destination，再提交模型终态和 resolution effects。
+- **安全**: 路径不可由游戏指定；CRC32 只用于损坏检测。
+
+### 回滚指南
+
+- 回滚：`git revert 0f196ed`
+- 检查：同时回滚 runtime storage/sessiond 协议，避免 `RuntimeContext` ABI 不一致。
+- 副作用：会移除 2048 恢复、精确 motion 和视觉烟测。
+
 ## [2026-08-24] 新增矿物主题动画界面
 
 **类型**: feat  
