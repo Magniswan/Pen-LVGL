@@ -1,6 +1,7 @@
 #include "lvgl_platform/crypto_provider.h"
 #include "lvgl_platform/device_profile.h"
 #include "lvgl_platform/package_verifier.h"
+#include "lvgl_platform/package_installer.h"
 #include "lvgl_platform/rollback_policy.h"
 #include "lvgl_platform/release_state.h"
 #include "lvgl_platform/safe_path.h"
@@ -267,6 +268,10 @@ void test_trust_and_rollback_policy()
 
     const lvgl_platform::InstallPolicyContext context {
         "1.0.0", "1.0", "youdao-y01-4.8.6", "aarch64", {"storage.private"}};
+    expect(lvgl_platform::install_official_package(
+               "C:/unused", bytes.data(), bytes.size(), context, *crypto).status ==
+               lvgl_platform::InstallerStatus::trust_rejected,
+           "production installer cannot run without its compiled official key");
     expect(lvgl_platform::evaluate_install_policy(candidate, package_digest, context).allowed(),
            "compatible first install is allowed");
 

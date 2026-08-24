@@ -14,6 +14,7 @@ enum class StateStoreStatus : std::uint16_t {
     loaded,
     loaded_degraded,
     not_found,
+    uninitialized,
     invalid_argument,
     root_untrusted,
     path_rejected,

@@ -142,49 +142,66 @@ SlotWrite write_slot(
     return SlotWrite::written;
 }
 
-std::vector<std::uint8_t> read_slot(int application, const char* slot)
+enum class SlotRead { read, missing, invalid };
+
+struct SlotContents {
+    SlotRead status {SlotRead::invalid};
+    std::vector<std::uint8_t> bytes;
+};
+
+SlotContents read_slot(int application, const char* slot)
 {
     FileDescriptor input(::openat(application, slot, O_RDONLY | O_NOFOLLOW | O_CLOEXEC));
-    if(!input.valid()) return {};
+    if(!input.valid()) return {errno == ENOENT ? SlotRead::missing : SlotRead::invalid, {}};
     struct stat status {};
     if(::fstat(input.get(), &status) != 0 || !S_ISREG(status.st_mode) ||
        status.st_uid != ::geteuid() || (status.st_mode & 0222) != 0 ||
        status.st_size <= 0 || status.st_size > 512) {
-        return {};
+        return {SlotRead::invalid, {}};
     }
     std::vector<std::uint8_t> bytes(static_cast<std::size_t>(status.st_size));
     std::size_t received = 0;
     while(received < bytes.size()) {
         const auto count = ::read(input.get(), bytes.data() + received, bytes.size() - received);
         if(count < 0 && errno == EINTR) continue;
-        if(count <= 0) return {};
+        if(count <= 0) return {SlotRead::invalid, {}};
         received += static_cast<std::size_t>(count);
     }
     std::uint8_t trailing = 0;
-    if(::read(input.get(), &trailing, 1) != 0) return {};
-    return bytes;
+    if(::read(input.get(), &trailing, 1) != 0) return {SlotRead::invalid, {}};
+    return {SlotRead::read, std::move(bytes)};
 }
 
+enum class OpenStoreStatus { opened, missing, untrusted };
+
 struct StoreDirectories {
+    OpenStoreStatus status {OpenStoreStatus::untrusted};
     FileDescriptor root;
     FileDescriptor apps;
     FileDescriptor application;
 };
 
-std::optional<StoreDirectories> open_store(
+StoreDirectories open_store(
     const std::string& store_root, const std::string& app_id) noexcept
 {
-    if(store_root.empty() || store_root.front() != '/') return std::nullopt;
+    if(store_root.empty() || store_root.front() != '/') return StoreDirectories();
     StoreDirectories directories;
     directories.root = FileDescriptor(::open(
         store_root.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
-    if(!directories.root.valid() || !trusted_directory(directories.root.get())) return std::nullopt;
+    if(!directories.root.valid() || !trusted_directory(directories.root.get())) return directories;
     directories.apps = open_directory_at(directories.root.get(), "apps");
-    if(!directories.apps.valid() || !trusted_directory(directories.apps.get())) return std::nullopt;
-    directories.application = open_directory_at(directories.apps.get(), app_id);
-    if(!directories.application.valid() || !trusted_directory(directories.application.get())) {
-        return std::nullopt;
+    if(!directories.apps.valid()) {
+        directories.status = errno == ENOENT ? OpenStoreStatus::missing : OpenStoreStatus::untrusted;
+        return directories;
     }
+    if(!trusted_directory(directories.apps.get())) return directories;
+    directories.application = open_directory_at(directories.apps.get(), app_id);
+    if(!directories.application.valid()) {
+        directories.status = errno == ENOENT ? OpenStoreStatus::missing : OpenStoreStatus::untrusted;
+        return directories;
+    }
+    if(!trusted_directory(directories.application.get())) return directories;
+    directories.status = OpenStoreStatus::opened;
     return directories;
 }
 
@@ -207,13 +224,13 @@ StateStoreResult persist_release_state(
     return store_result(StateStoreStatus::unsupported_platform, "STATE_STORE_POSIX_REQUIRED");
 #else
     auto directories = open_store(store_root, state.app_id);
-    if(!directories.has_value()) {
+    if(directories.status != OpenStoreStatus::opened) {
         return store_result(StateStoreStatus::root_untrusted, "STATE_STORE_PATH_UNTRUSTED");
     }
     const char* first = state.generation % 2 == 0 ? "state.b" : "state.a";
     const char* second = state.generation % 2 == 0 ? "state.a" : "state.b";
     const auto first_write = write_slot(
-        directories->application.get(), first, encoded.bytes);
+        directories.application.get(), first, encoded.bytes);
     if(first_write == SlotWrite::random_failed) {
         return store_result(StateStoreStatus::random_unavailable, "STATE_STORE_RANDOM_UNAVAILABLE");
     }
@@ -221,8 +238,8 @@ StateStoreResult persist_release_state(
         return store_result(StateStoreStatus::io_error, "STATE_STORE_FIRST_SLOT_FAILED");
     }
     const auto second_write = write_slot(
-        directories->application.get(), second, encoded.bytes);
-    if(::fsync(directories->apps.get()) != 0 || ::fsync(directories->root.get()) != 0) {
+        directories.application.get(), second, encoded.bytes);
+    if(::fsync(directories.apps.get()) != 0 || ::fsync(directories.root.get()) != 0) {
         return store_result(StateStoreStatus::written_degraded, "STATE_STORE_PARENT_SYNC_DEGRADED");
     }
     if(second_write != SlotWrite::written) {
@@ -244,12 +261,18 @@ StateStoreResult load_release_state(
     return store_result(StateStoreStatus::unsupported_platform, "STATE_STORE_POSIX_REQUIRED");
 #else
     auto directories = open_store(store_root, app_id);
-    if(!directories.has_value()) {
+    if(directories.status == OpenStoreStatus::missing) {
+        return store_result(StateStoreStatus::not_found, "STATE_STORE_NOT_FOUND");
+    }
+    if(directories.status != OpenStoreStatus::opened) {
         return store_result(StateStoreStatus::root_untrusted, "STATE_STORE_PATH_UNTRUSTED");
     }
-    auto selected = select_release_state(
-        read_slot(directories->application.get(), "state.a"),
-        read_slot(directories->application.get(), "state.b"), crypto);
+    auto slot_a = read_slot(directories.application.get(), "state.a");
+    auto slot_b = read_slot(directories.application.get(), "state.b");
+    if(slot_a.status == SlotRead::missing && slot_b.status == SlotRead::missing) {
+        return store_result(StateStoreStatus::uninitialized, "STATE_STORE_UNINITIALIZED");
+    }
+    auto selected = select_release_state(slot_a.bytes, slot_b.bytes, crypto);
     if(!selected.ok() || selected.state.app_id != app_id) {
         auto failure = store_result(StateStoreStatus::state_invalid, "STATE_STORE_INVALID");
         failure.selected = std::move(selected);

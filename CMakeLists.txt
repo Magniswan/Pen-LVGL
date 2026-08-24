@@ -51,6 +51,7 @@ add_library(lvgl_platform_contract STATIC
     platform/src/crypto/crypto_provider.cpp
     platform/src/ipc/touch_protocol.cpp
     platform/src/package/rollback_policy.cpp
+    platform/src/package/package_installer.cpp
     platform/src/package/package_verifier.cpp
     platform/src/profile/device_profile.cpp
     platform/src/storage/release_state.cpp
