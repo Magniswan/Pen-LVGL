@@ -1,5 +1,8 @@
 #include "game_2048_ui.h"
 
+#include "game_2048_persistence.h"
+
+#include "runtime/app_storage.h"
 #include "shell/app_theme.h"
 
 #include <algorithm>
@@ -14,6 +17,16 @@ constexpr std::int32_t kBoardSize = 236;
 constexpr std::int32_t kTileSize = 51;
 constexpr std::int32_t kGap = 6;
 constexpr std::int32_t kOrigin = 7;
+
+std::int32_t tile_x(std::uint8_t cell) noexcept
+{
+    return kOrigin + static_cast<std::int32_t>(cell % 4U) * (kTileSize + kGap);
+}
+
+std::int32_t tile_y(std::uint8_t cell) noexcept
+{
+    return kOrigin + static_cast<std::int32_t>(cell / 4U) * (kTileSize + kGap);
+}
 
 lv_obj_t* label(lv_obj_t* parent, const char* text, lv_color_t color)
 {
@@ -41,10 +54,14 @@ lv_obj_t* action(lv_obj_t* parent, const char* text, std::int32_t x)
 
 }  // namespace
 
-Game2048Ui::Game2048Ui(std::uint64_t seed) noexcept : game_(seed) {}
+Game2048Ui::Game2048Ui(std::uint64_t seed, dictpen::AppStorage* storage) noexcept
+    : game_(seed), storage_(storage)
+{
+}
 
 void Game2048Ui::create()
 {
+    if(storage_ != nullptr && storage_->available()) load_game_state(*storage_, game_);
     reduced_motion_ = std::getenv("LVGL_REDUCED_MOTION") != nullptr &&
                       std::string_view(std::getenv("LVGL_REDUCED_MOTION")) == "1";
     auto* root = lv_screen_active();
@@ -59,10 +76,10 @@ void Game2048Ui::create()
     auto* eyebrow = label(root, "MINERAL  /  2048", lv_color_hex(0x6FC4B5));
     lv_obj_set_pos(eyebrow, 28, 24);
     lv_obj_set_style_text_font(eyebrow, &lv_font_montserrat_16, 0);
-    auto* title = label(root, "合成矩阵", lv_color_hex(0xF2F5F1));
+    auto* title = label(root, "MERGE MATRIX", lv_color_hex(0xF2F5F1));
     lv_obj_set_pos(title, 28, 54);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
-    auto* hint = label(root, "滑动移动 · 相同矿石会融合", lv_color_hex(0x879895));
+    auto* hint = label(root, "SWIPE  /  MATCH TO MERGE", lv_color_hex(0x879895));
     lv_obj_set_pos(hint, 28, 92);
 
     auto* score_card = lv_obj_create(root);
@@ -87,9 +104,9 @@ void Game2048Ui::create()
     best_label_ = label(best_card, "BEST  0", lv_color_hex(0xC8D4D0));
     lv_obj_center(best_label_);
 
-    auto* undo = action(root, "撤销", 28);
+    auto* undo = action(root, "UNDO", 28);
     lv_obj_add_event_cb(undo, undo_event, LV_EVENT_CLICKED, this);
-    auto* restart = action(root, "重开", 166);
+    auto* restart = action(root, "RESET", 166);
     lv_obj_add_event_cb(restart, restart_event, LV_EVENT_CLICKED, this);
 
     board_ = lv_obj_create(root);
@@ -133,9 +150,12 @@ void Game2048Ui::create()
 
 void Game2048Ui::destroy()
 {
-    if(board_) lv_anim_delete(board_, animate_translate_x);
-    if(board_) lv_anim_delete(board_, animate_translate_y);
+    persist();
+    clear_motion_visuals();
     for(auto* tile : tiles_) if(tile) lv_anim_delete(tile, animate_scale);
+    if(score_fly_) lv_anim_delete(score_fly_, animate_translate_y);
+    pending_outcome_.reset();
+    queued_move_.reset();
     board_ = nullptr;
     restart_box_ = nullptr;
 }
@@ -163,16 +183,21 @@ lv_color_t Game2048Ui::tile_text_color(std::uint16_t value) noexcept
     return value <= 4 ? lv_color_hex(0x21302F) : lv_color_hex(0xFFF9ED);
 }
 
+void Game2048Ui::set_tile_value(lv_obj_t* tile, lv_obj_t* text, std::uint16_t value)
+{
+    lv_obj_set_style_bg_color(tile, tile_color(value), 0);
+    lv_obj_set_style_text_color(text, tile_text_color(value), 0);
+    if(value == 0) lv_label_set_text(text, "");
+    else lv_label_set_text_fmt(text, "%u", value);
+    lv_obj_set_style_text_font(
+        text, value >= 1024 ? &lv_font_montserrat_16 : &lv_font_montserrat_24, 0);
+}
+
 void Game2048Ui::render(bool entering)
 {
     const auto& values = game_.board();
     for(std::size_t index = 0; index < values.size(); ++index) {
-        lv_obj_set_style_bg_color(tiles_[index], tile_color(values[index]), 0);
-        lv_obj_set_style_text_color(labels_[index], tile_text_color(values[index]), 0);
-        if(values[index] == 0) lv_label_set_text(labels_[index], "");
-        else lv_label_set_text_fmt(labels_[index], "%u", values[index]);
-        lv_obj_set_style_text_font(labels_[index],
-            values[index] >= 1024 ? &lv_font_montserrat_16 : &lv_font_montserrat_24, 0);
+        set_tile_value(tiles_[index], labels_[index], values[index]);
         if(entering && !reduced_motion_ && values[index] != 0) {
             lv_obj_set_style_transform_scale(tiles_[index], 205, 0);
             lv_anim_t animation;
@@ -201,43 +226,148 @@ void Game2048Ui::request_move(MoveDirection direction)
 
 void Game2048Ui::run_move(MoveDirection direction)
 {
+    for(auto* tile : tiles_) {
+        if(tile == nullptr) continue;
+        lv_anim_delete(tile, animate_scale);
+        lv_obj_set_style_transform_scale(tile, 256, 0);
+    }
     const auto outcome = game_.move(direction);
     if(!outcome.changed) return;
-    render();
-    if(outcome.score_delta != 0) lv_label_set_text_fmt(score_fly_, "+%u", outcome.score_delta);
-    if(outcome.spawned_cell < tiles_.size() && !reduced_motion_) {
-        lv_anim_t spawn;
-        lv_anim_init(&spawn);
-        lv_anim_set_var(&spawn, tiles_[outcome.spawned_cell]);
-        lv_anim_set_values(&spawn, 128, 256);
-        lv_anim_set_duration(&spawn, 180);
-        lv_anim_set_path_cb(&spawn, lv_anim_path_overshoot);
-        lv_anim_set_exec_cb(&spawn, animate_scale);
-        lv_anim_start(&spawn);
-    }
+    pending_outcome_ = outcome;
     if(reduced_motion_) {
+        render();
         finish_move();
         return;
     }
     animating_ = true;
-    const bool horizontal = direction == MoveDirection::left || direction == MoveDirection::right;
-    const auto start = direction == MoveDirection::left || direction == MoveDirection::up ? 16 : -16;
-    lv_anim_t slide;
-    lv_anim_init(&slide);
-    lv_anim_set_var(&slide, board_);
-    lv_anim_set_values(&slide, start, 0);
-    lv_anim_set_duration(&slide, 150);
-    lv_anim_set_path_cb(&slide, lv_anim_path_ease_out);
-    lv_anim_set_exec_cb(&slide, horizontal ? animate_translate_x : animate_translate_y);
-    lv_anim_set_user_data(&slide, this);
-    lv_anim_set_completed_cb(&slide, move_animation_complete);
-    lv_anim_start(&slide);
+    begin_motion(outcome);
+}
+
+void Game2048Ui::begin_motion(const MoveOutcome& outcome)
+{
+    clear_motion_visuals();
+    for(std::size_t index = 0; index < tiles_.size(); ++index) {
+        set_tile_value(tiles_[index], labels_[index], 0);
+    }
+    pending_motion_animations_ = outcome.motion_count;
+    for(std::size_t index = 0; index < outcome.motion_count; ++index) {
+        const auto& motion = outcome.motions[index];
+        auto& visual = motion_visuals_[index];
+        visual.from_x = tile_x(motion.from);
+        visual.from_y = tile_y(motion.from);
+        visual.to_x = tile_x(motion.to);
+        visual.to_y = tile_y(motion.to);
+        visual.tile = lv_obj_create(board_);
+        lv_obj_set_pos(visual.tile, visual.from_x, visual.from_y);
+        lv_obj_set_size(visual.tile, kTileSize, kTileSize);
+        lv_obj_set_style_radius(visual.tile, 11, 0);
+        lv_obj_set_style_border_width(visual.tile, 1, 0);
+        lv_obj_set_style_border_color(visual.tile, lv_color_hex(0x6D8A84), 0);
+        lv_obj_set_style_pad_all(visual.tile, 0, 0);
+        lv_obj_set_style_shadow_width(visual.tile, motion.merged ? 10 : 4, 0);
+        lv_obj_set_style_shadow_color(visual.tile, tile_color(motion.value), 0);
+        lv_obj_set_style_shadow_opa(
+            visual.tile,
+            static_cast<lv_opa_t>(motion.merged ? LV_OPA_50 : LV_OPA_20),
+            0);
+        lv_obj_remove_flag(visual.tile, LV_OBJ_FLAG_SCROLLABLE);
+        visual.label = label(visual.tile, "", tile_text_color(motion.value));
+        lv_obj_center(visual.label);
+        set_tile_value(visual.tile, visual.label, motion.value);
+
+        lv_anim_t animation;
+        lv_anim_init(&animation);
+        lv_anim_set_var(&animation, &visual);
+        lv_anim_set_values(&animation, 0, 256);
+        lv_anim_set_duration(&animation, 155);
+        lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
+        lv_anim_set_exec_cb(&animation, animate_motion);
+        lv_anim_set_user_data(&animation, this);
+        lv_anim_set_completed_cb(&animation, motion_animation_complete);
+        lv_anim_start(&animation);
+    }
+    if(pending_motion_animations_ == 0) complete_motion_phase();
+}
+
+void Game2048Ui::complete_motion_phase()
+{
+    clear_motion_visuals();
+    render();
+    start_resolution_effects();
+}
+
+void Game2048Ui::start_resolution_effects()
+{
+    if(!pending_outcome_) {
+        finish_move();
+        return;
+    }
+    const auto outcome = *pending_outcome_;
+    if(outcome.score_delta != 0) {
+        lv_label_set_text_fmt(score_fly_, "+%u", outcome.score_delta);
+        lv_obj_set_style_translate_y(score_fly_, 8, 0);
+        lv_anim_t fly;
+        lv_anim_init(&fly);
+        lv_anim_set_var(&fly, score_fly_);
+        lv_anim_set_values(&fly, 8, -7);
+        lv_anim_set_duration(&fly, 210);
+        lv_anim_set_path_cb(&fly, lv_anim_path_ease_out);
+        lv_anim_set_exec_cb(&fly, animate_translate_y);
+        lv_anim_start(&fly);
+    }
+
+    std::array<bool, 16> pulsed {};
+    for(std::size_t index = 0; index < outcome.motion_count; ++index) {
+        const auto& motion = outcome.motions[index];
+        if(!motion.merged || motion.to >= pulsed.size() || pulsed[motion.to]) continue;
+        pulsed[motion.to] = true;
+        lv_anim_t pulse;
+        lv_anim_init(&pulse);
+        lv_anim_set_var(&pulse, tiles_[motion.to]);
+        lv_anim_set_values(&pulse, 256, 282);
+        lv_anim_set_duration(&pulse, 85);
+        lv_anim_set_reverse_duration(&pulse, 95);
+        lv_anim_set_path_cb(&pulse, lv_anim_path_overshoot);
+        lv_anim_set_exec_cb(&pulse, animate_scale);
+        lv_anim_start(&pulse);
+    }
+
+    if(outcome.spawned_cell >= tiles_.size()) {
+        finish_move();
+        return;
+    }
+    lv_anim_t spawn;
+    lv_anim_init(&spawn);
+    lv_anim_set_var(&spawn, tiles_[outcome.spawned_cell]);
+    lv_anim_set_values(&spawn, 112, 256);
+    lv_anim_set_duration(&spawn, 190);
+    lv_anim_set_path_cb(&spawn, lv_anim_path_overshoot);
+    lv_anim_set_exec_cb(&spawn, animate_scale);
+    lv_anim_set_user_data(&spawn, this);
+    lv_anim_set_completed_cb(&spawn, resolution_animation_complete);
+    lv_anim_start(&spawn);
+}
+
+void Game2048Ui::clear_motion_visuals()
+{
+    for(auto& visual : motion_visuals_) {
+        lv_anim_delete(&visual, animate_motion);
+        if(visual.tile != nullptr) lv_obj_delete(visual.tile);
+        visual = {};
+    }
+    pending_motion_animations_ = 0;
 }
 
 void Game2048Ui::finish_move()
 {
     animating_ = false;
+    pending_outcome_.reset();
+    if(score_fly_) {
+        lv_anim_delete(score_fly_, animate_translate_y);
+        lv_obj_set_style_translate_y(score_fly_, 0, 0);
+    }
     lv_label_set_text(score_fly_, "");
+    persist();
     if(queued_move_) {
         const auto next = *queued_move_;
         queued_move_.reset();
@@ -245,21 +375,26 @@ void Game2048Ui::finish_move()
     }
 }
 
+void Game2048Ui::persist() noexcept
+{
+    if(storage_ != nullptr && storage_->available()) save_game_state(*storage_, game_);
+}
+
 void Game2048Ui::update_phase()
 {
-    if(game_.phase() == GamePhase::won) lv_label_set_text(status_label_, "2048  /  已共振");
-    else if(game_.phase() == GamePhase::lost) lv_label_set_text(status_label_, "矩阵已锁定");
-    else lv_label_set_text(status_label_, "保持节奏");
+    if(game_.phase() == GamePhase::won) lv_label_set_text(status_label_, "2048  /  RESONANCE");
+    else if(game_.phase() == GamePhase::lost) lv_label_set_text(status_label_, "NO MOVES");
+    else lv_label_set_text(status_label_, "IN FLOW");
 }
 
 void Game2048Ui::show_restart_confirmation()
 {
     if(restart_box_) return;
     restart_box_ = lv_msgbox_create(lv_layer_top());
-    lv_msgbox_add_title(restart_box_, "重新校准矩阵？");
-    lv_msgbox_add_text(restart_box_, "当前棋盘和分数将被清除。最高分会保留。");
-    auto* cancel = lv_msgbox_add_footer_button(restart_box_, "取消");
-    auto* confirm = lv_msgbox_add_footer_button(restart_box_, "重新开始");
+    lv_msgbox_add_title(restart_box_, "RESET MATRIX?");
+    lv_msgbox_add_text(restart_box_, "The board and score will be cleared. Best score is kept.");
+    auto* cancel = lv_msgbox_add_footer_button(restart_box_, "CANCEL");
+    auto* confirm = lv_msgbox_add_footer_button(restart_box_, "RESET");
     lv_obj_add_event_cb(cancel, cancel_restart_event, LV_EVENT_CLICKED, this);
     lv_obj_add_event_cb(confirm, confirm_restart_event, LV_EVENT_CLICKED, this);
     lv_obj_set_width(restart_box_, 440);
@@ -288,12 +423,16 @@ void Game2048Ui::gesture_event(lv_event_t* event)
 void Game2048Ui::undo_event(lv_event_t* event)
 {
     auto* self = static_cast<Game2048Ui*>(lv_event_get_user_data(event));
-    if(!self->animating_ && self->game_.undo()) self->render();
+    if(!self->animating_ && self->game_.undo()) {
+        self->render();
+        self->persist();
+    }
 }
 
 void Game2048Ui::restart_event(lv_event_t* event)
 {
-    static_cast<Game2048Ui*>(lv_event_get_user_data(event))->show_restart_confirmation();
+    auto* self = static_cast<Game2048Ui*>(lv_event_get_user_data(event));
+    if(!self->animating_) self->show_restart_confirmation();
 }
 
 void Game2048Ui::confirm_restart_event(lv_event_t* event)
@@ -307,6 +446,7 @@ void Game2048Ui::confirm_restart_event(lv_event_t* event)
     self->queued_move_.reset();
     self->animating_ = false;
     self->render(true);
+    self->persist();
 }
 
 void Game2048Ui::cancel_restart_event(lv_event_t* event)
@@ -314,11 +454,6 @@ void Game2048Ui::cancel_restart_event(lv_event_t* event)
     auto* self = static_cast<Game2048Ui*>(lv_event_get_user_data(event));
     lv_msgbox_close(self->restart_box_);
     self->restart_box_ = nullptr;
-}
-
-void Game2048Ui::animate_translate_x(void* object, std::int32_t value)
-{
-    lv_obj_set_style_translate_x(static_cast<lv_obj_t*>(object), value, 0);
 }
 
 void Game2048Ui::animate_translate_y(void* object, std::int32_t value)
@@ -331,7 +466,25 @@ void Game2048Ui::animate_scale(void* object, std::int32_t value)
     lv_obj_set_style_transform_scale(static_cast<lv_obj_t*>(object), value, 0);
 }
 
-void Game2048Ui::move_animation_complete(lv_anim_t* animation)
+void Game2048Ui::animate_motion(void* object, std::int32_t value)
+{
+    auto* visual = static_cast<MotionVisual*>(object);
+    const auto x = visual->from_x +
+                   static_cast<std::int32_t>((visual->to_x - visual->from_x) * value / 256);
+    const auto y = visual->from_y +
+                   static_cast<std::int32_t>((visual->to_y - visual->from_y) * value / 256);
+    if(visual->tile != nullptr) lv_obj_set_pos(visual->tile, x, y);
+}
+
+void Game2048Ui::motion_animation_complete(lv_anim_t* animation)
+{
+    auto* self = static_cast<Game2048Ui*>(lv_anim_get_user_data(animation));
+    if(self->pending_motion_animations_ == 0) return;
+    --self->pending_motion_animations_;
+    if(self->pending_motion_animations_ == 0) self->complete_motion_phase();
+}
+
+void Game2048Ui::resolution_animation_complete(lv_anim_t* animation)
 {
     static_cast<Game2048Ui*>(lv_anim_get_user_data(animation))->finish_move();
 }

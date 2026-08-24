@@ -37,7 +37,10 @@ test('session daemon supervises one independent foreground application', () => {
   assert.match(source, /SessionControlCommand::launch_application/);
   assert.match(source, /SessionControlCommand::home/);
   assert.match(source, /run_foreground\(/);
-  assert.match(source, /open_verified_program\(release, release\.profile, foreground\)/);
+  assert.match(
+    source,
+    /open_verified_program\([\s\S]*release, release\.profile, foreground, &private_storage\)/,
+  );
   assert.match(source, /foreground = "top\.lvgl\.desktop"/);
   assert.match(source, /应用异常退出/);
 });

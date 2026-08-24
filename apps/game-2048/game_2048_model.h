@@ -32,6 +32,19 @@ struct MoveOutcome {
     std::uint16_t spawned_value {0};
 };
 
+struct PersistentGameState {
+    std::array<std::uint16_t, 16> board {};
+    std::uint32_t score {0};
+    std::uint32_t best_score {0};
+    GamePhase phase {GamePhase::playing};
+    std::uint64_t random_state {1};
+    std::array<std::uint16_t, 16> undo_board {};
+    std::uint32_t undo_score {0};
+    GamePhase undo_phase {GamePhase::playing};
+    std::uint64_t undo_random_state {1};
+    bool undo_valid {false};
+};
+
 class Game2048 {
 public:
     explicit Game2048(std::uint64_t seed = 1) noexcept;
@@ -39,6 +52,8 @@ public:
     void reset() noexcept;
     MoveOutcome move(MoveDirection direction) noexcept;
     bool undo() noexcept;
+    PersistentGameState persistent_state() const noexcept;
+    bool restore_state(const PersistentGameState& state) noexcept;
 
     const std::array<std::uint16_t, 16>& board() const noexcept { return board_; }
     std::uint32_t score() const noexcept { return score_; }
@@ -63,6 +78,8 @@ private:
     std::uint64_t random() noexcept;
     bool spawn(MoveOutcome* outcome) noexcept;
     void update_phase() noexcept;
+    static GamePhase phase_for_board(const std::array<std::uint16_t, 16>& board) noexcept;
+    static bool valid_board(const std::array<std::uint16_t, 16>& board) noexcept;
     static std::uint8_t cell(MoveDirection direction, std::uint8_t line, std::uint8_t offset) noexcept;
 
     std::array<std::uint16_t, 16> board_ {};

@@ -15,6 +15,7 @@
 | 伪造 desktop registry/launch path | sessiond-owned canonical registry；desktop 只传 app ID |
 | 触控重放/乱序/越界 | per-session nonce、strict sequence、monotonic age、contact lifecycle |
 | 利用 broad process kill | 只监督 exact child PID；源码测试禁止 broad kill |
+| 路径注入/链接替换应用状态 | sessiond 仅传 0700 app dir FD；记录名闭合校验、`openat(O_NOFOLLOW)`、0600/nlink 检查、原子替换 |
 | patch 普通用户态文件 | owner/mode/hash/signature 检查，失败关闭 |
 | 已控制 root/内核 | 无法仅靠用户态彻底防御；见下方边界 |
 
@@ -46,5 +47,5 @@ root 可改内核、`ptrace`/写内存、替换动态链接器、拦截系统调
 - 前台应用当前仍继承 root 身份，尚未完成 UID/seccomp/namespace 强制隔离。
 - Y01 hole/overlay profile 尚未真机认证。
 - ADB scripts 尚缺 serial allowlist + hardware identity gate。
-- 私有存储与 quota enforcement 尚未完成，2048 暂无安全持久化。
+- 私有存储 FD 与原子记录已实现，但 quota、独立 UID 和 mount namespace 尚未完成；因此不宣称能隔离已控制 root 的恶意应用。
 - 在线 entitlement/revocation 属于后续阶段；offline v1 不依赖网络。

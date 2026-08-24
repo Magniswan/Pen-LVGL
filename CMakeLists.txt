@@ -108,9 +108,11 @@ if(BUILD_TESTING)
 
     add_executable(game_2048_model_tests
         apps/game-2048/game_2048_model.cpp
+        apps/game-2048/game_2048_persistence.cpp
+        src/runtime/app_storage.cpp
         tests/host/game_2048_model_test.cpp
     )
-    target_include_directories(game_2048_model_tests PRIVATE apps/game-2048)
+    target_include_directories(game_2048_model_tests PRIVATE apps/game-2048 src)
     if(MSVC)
         target_compile_options(game_2048_model_tests PRIVATE /W4 /WX)
     else()
@@ -119,6 +121,27 @@ if(BUILD_TESTING)
         )
     endif()
     add_test(NAME game_2048_model_tests COMMAND game_2048_model_tests)
+
+    add_executable(game_2048_visual_test
+        apps/game-2048/game_2048_model.cpp
+        apps/game-2048/game_2048_persistence.cpp
+        apps/game-2048/game_2048_ui.cpp
+        src/runtime/app_storage.cpp
+        src/shell/app_theme.cpp
+        src/assets/lv_font_app_16.c
+        tests/host/game_2048_visual_test.cpp
+    )
+    target_include_directories(game_2048_visual_test PRIVATE src apps/game-2048)
+    target_link_libraries(game_2048_visual_test PRIVATE lvgl::lvgl)
+    if(MSVC)
+        target_compile_options(game_2048_visual_test PRIVATE /W4 /WX /utf-8 /wd4996)
+    else()
+        target_compile_options(game_2048_visual_test PRIVATE
+            -Wall -Wextra -Wpedantic -Werror
+        )
+    endif()
+    add_test(NAME game_2048_visual_test
+        COMMAND game_2048_visual_test "${CMAKE_SOURCE_DIR}/test-results/game-2048.ppm")
 endif()
 
 add_library(device_profile STATIC
@@ -143,6 +166,7 @@ target_compile_options(session_protocol PRIVATE -Wall -Wextra -Wpedantic -Werror
 
 add_library(app_control STATIC
     src/runtime/app_control.cpp
+    src/runtime/app_storage.cpp
 )
 target_include_directories(app_control PUBLIC src)
 target_link_libraries(app_control PUBLIC session_protocol lvgl_platform_contract)
@@ -295,6 +319,7 @@ if(EXISTS "${DEVICE_LIBDRM_PATH}")
         SOURCES
             apps/game-2048/main.cpp
             apps/game-2048/game_2048_model.cpp
+            apps/game-2048/game_2048_persistence.cpp
             apps/game-2048/game_2048_ui.cpp
         INCLUDE_DIRECTORIES apps/game-2048
     )

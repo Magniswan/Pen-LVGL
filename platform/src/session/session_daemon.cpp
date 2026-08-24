@@ -46,6 +46,7 @@ constexpr const char* kReleasePrefix =
 constexpr const char* kTouchPath = "/run/lvgl-platform/touch.sock";
 constexpr const char* kApplicationStore = "/userdisk/apps/lvgl-apps";
 constexpr const char* kApplicationPolicyStore = "/userdisk/apps/lvgl-app-policy";
+constexpr const char* kApplicationDataDirectory = "lvgl-data";
 constexpr std::size_t kMaximumPackageSize = 256U * 1024U * 1024U + 96U;
 constexpr int kReadyTimeoutMilliseconds = 10000;
 
@@ -111,6 +112,13 @@ bool trusted_directory(int descriptor) noexcept
            details.st_uid == 0 && (details.st_mode & 0022) == 0;
 }
 
+bool private_directory(int descriptor) noexcept
+{
+    struct stat details {};
+    return descriptor >= 0 && ::fstat(descriptor, &details) == 0 && S_ISDIR(details.st_mode) &&
+           details.st_uid == 0 && (details.st_mode & 0777) == 0700;
+}
+
 bool trusted_regular(int descriptor, std::uint16_t expected_mode, std::uint64_t expected_size) noexcept
 {
     struct stat details {};
@@ -149,6 +157,32 @@ FileDescriptor open_absolute_directory(std::string_view path) noexcept
         current = std::move(next);
     }
     return current;
+}
+
+FileDescriptor ensure_private_storage(std::string_view app_id) noexcept
+{
+    if(!lvgl_platform::valid_session_app_id(app_id)) return {};
+    auto apps = open_absolute_directory("/userdisk/apps");
+    if(!trusted_directory(apps.get())) return {};
+    bool root_created = false;
+    if(::mkdirat(apps.get(), kApplicationDataDirectory, 0700) == 0) root_created = true;
+    else if(errno != EEXIST) return {};
+    FileDescriptor root(::openat(
+        apps.get(), kApplicationDataDirectory,
+        O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
+    if(!private_directory(root.get()) || (root_created && ::fsync(apps.get()) != 0)) return {};
+
+    const std::string name(app_id);
+    bool app_created = false;
+    if(::mkdirat(root.get(), name.c_str(), 0700) == 0) app_created = true;
+    else if(errno != EEXIST) return {};
+    FileDescriptor directory(::openat(
+        root.get(), name.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
+    if(!private_directory(directory.get()) ||
+       (app_created && (::fsync(directory.get()) != 0 || ::fsync(root.get()) != 0))) {
+        return {};
+    }
+    return directory;
 }
 
 FileDescriptor open_release_file(int release, std::string_view path) noexcept
@@ -532,20 +566,24 @@ bool inherit_descriptor(int descriptor) noexcept
 }
 
 pid_t start_program(
-    int executable, int control, int touch, int registry, std::string_view program_id,
+    int executable, int control, int touch, int registry, int storage,
+    std::string_view program_id,
     const lvgl_platform::CertifiedSessionProfile& profile, std::string_view previous_error) noexcept
 {
     const pid_t child = ::fork();
     if(child != 0) return child;
     if(::setpgid(0, 0) != 0 || !inherit_descriptor(control) || !inherit_descriptor(touch) ||
-       (registry >= 0 && !inherit_descriptor(registry))) {
+       (registry >= 0 && !inherit_descriptor(registry)) ||
+       (storage >= 0 && !inherit_descriptor(storage))) {
         _exit(126);
     }
     const long limit_value = ::sysconf(_SC_OPEN_MAX);
     const int limit = static_cast<int>(
         std::min<long>(limit_value > 0 ? limit_value : 1024, 65536));
     for(int fd = STDERR_FILENO + 1; fd < limit; ++fd) {
-        if(fd != executable && fd != control && fd != touch && fd != registry) ::close(fd);
+        if(fd != executable && fd != control && fd != touch && fd != registry && fd != storage) {
+            ::close(fd);
+        }
     }
     std::vector<std::string> environment {
         "PATH=/usr/sbin:/usr/bin:/sbin:/bin",
@@ -570,6 +608,9 @@ pid_t start_program(
     };
     if(registry >= 0) {
         environment.push_back("LVGL_APP_REGISTRY_FD=" + std::to_string(registry));
+    }
+    if(storage >= 0) {
+        environment.push_back("LVGL_APP_STORAGE_FD=" + std::to_string(storage));
     }
     if(!previous_error.empty()) {
         environment.push_back("LVGL_APP_ERROR=" + std::string(previous_error));
@@ -605,8 +646,9 @@ const char* built_in_program_path(std::string_view app_id) noexcept
 
 FileDescriptor open_verified_program(
     const VerifiedRelease& release, const lvgl_platform::CertifiedSessionProfile& profile,
-    std::string_view app_id)
+    std::string_view app_id, bool* private_storage = nullptr)
 {
+    if(private_storage != nullptr) *private_storage = false;
     if(!reserved_application_id(app_id)) {
         VerifiedApplication application;
         if(verify_installed_application(app_id, profile, application)) {
@@ -617,6 +659,11 @@ FileDescriptor open_verified_program(
             auto executable = open_release_file(application.release.get(), manifest.entry);
             if(entry != manifest.files.end() && entry->role == "executable" &&
                entry->mode == 0755 && trusted_regular(executable.get(), 0755, entry->size)) {
+                if(private_storage != nullptr) {
+                    *private_storage = std::find(
+                        manifest.capabilities.begin(), manifest.capabilities.end(),
+                        "storage.private") != manifest.capabilities.end();
+                }
                 return executable;
             }
             return {};
@@ -632,6 +679,9 @@ FileDescriptor open_verified_program(
            manifest_file->role != "executable" || manifest_file->mode != 0755 ||
            !trusted_regular(executable.get(), 0755, manifest_file->size)) {
             return {};
+        }
+        if(private_storage != nullptr && app_id == "top.lvgl.game2048") {
+            *private_storage = true;
         }
         return executable;
     }
@@ -680,7 +730,7 @@ struct ForegroundOutcome {
 ForegroundOutcome run_foreground(
     int executable, std::string_view program_id, std::string_view previous_error,
     const lvgl_platform::CertifiedSessionProfile& profile, int run_directory,
-    int external_touch_socket, int registry, lvgl_platform::TouchRouter& router,
+    int external_touch_socket, int registry, int storage, lvgl_platform::TouchRouter& router,
     lvgl_platform::SessionStatusDocument& status)
 {
     ForegroundOutcome outcome;
@@ -698,7 +748,7 @@ ForegroundOutcome run_foreground(
     FileDescriptor parent_touch(touch_pair[0]);
     FileDescriptor child_touch(touch_pair[1]);
     const pid_t child = start_program(
-        executable, child_control.get(), child_touch.get(), registry, program_id, profile,
+        executable, child_control.get(), child_touch.get(), registry, storage, program_id, profile,
         previous_error);
     if(child <= 1) {
         outcome.result = 77;
@@ -864,7 +914,9 @@ int main(int argc, char** argv)
             result = 74;
             break;
         }
-        auto executable = open_verified_program(release, release.profile, foreground);
+        bool private_storage = false;
+        auto executable = open_verified_program(
+            release, release.profile, foreground, &private_storage);
         if(!executable.valid()) {
             if(foreground != "top.lvgl.desktop") {
                 previous_error = "应用入口未包含在已验证的平台发行版中";
@@ -882,9 +934,22 @@ int main(int argc, char** argv)
                 break;
             }
         }
+        FileDescriptor storage;
+        if(private_storage) {
+            storage = ensure_private_storage(foreground);
+            if(!storage.valid()) {
+                if(foreground != "top.lvgl.desktop") {
+                    previous_error = "应用私有存储不可用";
+                    foreground = "top.lvgl.desktop";
+                    continue;
+                }
+                result = 86;
+                break;
+            }
+        }
         const auto outcome = run_foreground(
             executable.get(), foreground, previous_error, release.profile,
-            run_directory.get(), touch_socket.get(), registry.get(), router, status);
+            run_directory.get(), touch_socket.get(), registry.get(), storage.get(), router, status);
         previous_error.clear();
         if(g_stop != 0) {
             result = outcome.result == 0 ? 143 : outcome.result;

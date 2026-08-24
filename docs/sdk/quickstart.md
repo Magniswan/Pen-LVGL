@@ -41,6 +41,19 @@ public:
 - `stop_requested` 应合并 `AppShell::stop_requested()` 和 app 自身退出条件。
 - `destroy` 删除 timer/event/object 持有者，必须可在失败路径调用。
 - 回桌面使用 `context.control.home()`；不要终止进程或 Falcon。
+- manifest 声明 `storage.private` 后，可通过 `context.storage` 读写固定名称的有界记录；不要接触存储路径或继承 FD。
+
+私有记录示例：
+
+```cpp
+std::array<std::uint8_t, 64> state {};
+context.storage.write_atomic("state.v1", state.data(), state.size(), state.size());
+
+std::vector<std::uint8_t> loaded;
+context.storage.read("state.v1", loaded, state.size());
+```
+
+记录名只允许小写 ASCII、数字、点、下划线和连字符，不能以点开头或包含 `..`。写入采用同目录临时文件、`fsync` 与 `renameat`；应用仍需自行定义版本、长度、校验和及严格反序列化。
 
 ## 4. Build
 
@@ -73,6 +86,6 @@ dev 包可用于格式、可复现性和签名前检查，但设备安装器会�
 
 ## Current SDK limitations
 
-- private storage API/quota 尚未落地；不要自行创建共享可写目录。
+- private storage record API 已落地，但 quota 尚未强制；不要自行创建共享可写目录。
 - runtime sandbox（独立 UID/seccomp/namespace/cgroup）尚未强制。
 - 只支持 SDK ABI `1.0`、offline-v1 和一个认证 profile family。

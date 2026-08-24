@@ -14,6 +14,7 @@ lvgl-sessiond
   ├─ verify its own signed release and certified profile
   ├─ bind /run/lvgl-platform/touch.sock
   ├─ derive registry and open verified entry FD
+  ├─ capability-gate one root-owned 0700 app storage dir FD
   └─ fork + fexecve exactly one foreground child
 foreground app
   ├─ DrmBackend: existing certified overlay plane only
@@ -42,6 +43,7 @@ foreground app
 - 每次切换创建新的 control/touch socketpair；session nonce 与外部触摸序列保持连续。
 - 只向精确 fork 的 child PID 发送 SIGTERM/SIGKILL，从不扫描或终止 Falcon/miniapp。
 - 应用崩溃返回桌面并显示一次安全错误；桌面连续失败三次退出到 Falcon。
+- `storage.private` 只传目录 FD 和固定环境槽，不传 path/root/key；应用 record API 采用 no-follow、0600、bounded read 和原子替换。
 
 ## 详细文档
 

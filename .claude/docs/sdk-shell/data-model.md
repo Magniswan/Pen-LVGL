@@ -14,7 +14,7 @@
 
 ## RuntimeContext
 
-当前仅含 `RuntimeMetrics&` 与 `AppControl&`，引用生命周期覆盖 `RuntimeApplication` 的 create/run/destroy。不得缓存到进程退出之后或跨线程无同步访问。
+含 `RuntimeMetrics&`、`AppControl&` 与 `AppStorage&`，引用生命周期覆盖 `RuntimeApplication` 的 create/run/destroy。不得缓存到进程退出之后或跨线程无同步访问。只有 manifest 声明 `storage.private`（或内置 2048）时 storage 才可用。
 
 ## AppDescriptor
 

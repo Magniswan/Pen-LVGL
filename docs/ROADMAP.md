@@ -6,7 +6,7 @@
 
 - 为每个 app 配置独立非 root UID/GID；落地 `setgroups/setresgid/setresuid`。
 - 按 manifest 强制 rlimit、seccomp allowlist、cgroup CPU/memory 与只读 mount namespace。
-- 实现 sessiond broker 的 app-private storage FD API、原子记录、quota 和跨 app 隔离。
+- 为现有 app-private storage FD/原子记录接口增加强制 quota；在独立 UID/mount namespace 落地后验证真正的跨 app 隔离。
 - 增加应用卸载/隔离/rollback UI；保留 anti-rollback policy 和审计记录。
 - ADB 脚本增加 serial allowlist + signed device identity gate。
 - 为 package/state/session parser 加 coverage-guided fuzzing 与 sanitizer CI。
@@ -22,9 +22,7 @@
 ## P1 — SDK 与应用体验
 
 - 稳定 SDK ABI header/export package，加入 ABI compatibility CI。
-- 2048 接入 private storage，持久化 best/board/RNG/undo。
-- 2048 填充精确 per-tile motion，加入 merge pulse、spawn 与 reduced-motion golden tests。
-- 提供 host LVGL simulator/screenshot harness 和 960×266 golden image regression。
+- 为 2048 离屏烟测增加逐帧 motion/reduced-motion golden image regression，并在认证硬件完成手势与帧时间基线。
 - 完成 capability broker（audio/dictionary/haptics/scanner/network）。
 - 增加应用图标/本地化 metadata 的签名格式与 desktop cache。
 

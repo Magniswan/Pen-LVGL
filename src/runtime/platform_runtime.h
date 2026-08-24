@@ -2,12 +2,14 @@
 
 #include "diagnostics/runtime_metrics.h"
 #include "runtime/app_control.h"
+#include "runtime/app_storage.h"
 
 namespace dictpen {
 
 struct RuntimeContext {
     RuntimeMetrics& metrics;
     AppControl& control;
+    AppStorage& storage;
 };
 
 class RuntimeApplication {

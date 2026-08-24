@@ -42,8 +42,8 @@ int main() {
 ## 稳定性状态
 
 - 当前 SDK ABI 标识为 `1.0`，manifest 必须精确匹配。
-- `RuntimeApplication`、`RuntimeContext`、`AppControl` 和基础 theme 是现有最小接口。
-- 私有持久化、能力 broker、haptics、安全日志与完整 sandbox 仍需实现后才能作为商用稳定 API；应用不得自行发明全局存储路径。
+- `RuntimeApplication`、`RuntimeContext`、`AppControl`、`AppStorage` 和基础 theme 是现有最小接口。
+- `AppStorage` 已提供私有目录内的有界原子 record API；quota、能力 broker、haptics、安全日志与完整 sandbox 仍需实现后才能作为商用稳定 API。应用不得自行发明全局存储路径。
 
 ## 详细文档
 

@@ -6,6 +6,7 @@
 |---|---|
 | `RuntimeContext.metrics` | 只读采样/诊断对象，不作为游戏计时真相 |
 | `RuntimeContext.control` | 当前 session 的类型化导航控制 |
+| `RuntimeContext.storage` | capability-gated app-private 固定记录存储；不可用时 fail closed |
 | `RuntimeApplication::create` | 仅 runtime 初始化后调用一次 |
 | `stop_requested` | 快速、无副作用；每轮主循环调用 |
 | `destroy` | 幂等清理 timers/animations/业务资源 |
@@ -26,6 +27,13 @@
 ## Metrics
 
 `RuntimeMetrics::snapshot()` 提供 FPS、平均/峰值 frame time、CPU、RSS、frames、input count 和最后 pointer。只在诊断/测试启用周期日志，避免常驻 I/O。
+
+## Storage
+
+- `available()`：sessiond 是否授予当前 app 私有目录 FD。
+- `read(record, output, maximum_size)`：只读 root-owned 0600、单硬链接 regular record；拒绝 symlink、空文件、超限和尾随增长。
+- `write_atomic(record, data, size, maximum_size)`：0600 随机临时文件 → file fsync → 同目录 rename → directory fsync。
+- record 不是路径；只允许闭合字符集、最长 64 bytes、非隐藏名且不含 `..`。
 
 ## Packaging
 

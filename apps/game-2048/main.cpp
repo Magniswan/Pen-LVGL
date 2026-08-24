@@ -14,7 +14,7 @@ public:
     {
         const auto seed = static_cast<std::uint64_t>(
             std::chrono::steady_clock::now().time_since_epoch().count());
-        ui_ = std::make_unique<lvgl_apps::Game2048Ui>(seed);
+        ui_ = std::make_unique<lvgl_apps::Game2048Ui>(seed, &context.storage);
         ui_->create();
         shell_ = std::make_unique<dictpen::AppShell>(
             context.control, dictpen::AppShellConfig {"2048", false});

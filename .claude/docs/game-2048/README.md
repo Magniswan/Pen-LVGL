@@ -15,7 +15,9 @@
 ```text
 gesture -> request_move -> Game2048::move (truth)
                          -> MoveOutcome
-                         -> render/animation
+                         -> exact source-to-destination tile animation
+                         -> merge pulse + spawn + score effect
+                         -> atomic private-state save
                          -> one queued gesture after completion
 ```
 
@@ -24,9 +26,10 @@ gesture -> request_move -> Game2048::move (truth)
 ## 当前完成度
 
 - 模型规则与 host tests 完成。
-- 入场、spawn、score 和整板 slide 动画完成。
-- 精确 per-tile motion 数据尚未填充；`TileMotion` 目前是预留结构。
-- best score / board 持久化尚未接入私有存储 API。
+- 入场、精确逐 tile 位移、merge pulse、spawn overshoot 与 score 动画完成。
+- reduced-motion 直接提交模型终态，不改变游戏规则。
+- board/score/best/phase/RNG/单步 undo 以 128-byte canonical record 原子持久化。
+- host model tests 与 960×266 离屏视觉烟测完成；逐帧 golden 与真机手势/性能认证仍在 roadmap。
 - 可生成开发 `.lvapp.dev`；正式包必须由官方离线密钥签名。
 
 ## 详细文档

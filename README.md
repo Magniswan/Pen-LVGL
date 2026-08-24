@@ -14,7 +14,7 @@
 | LVGL desktop | 展示 sessiond 提供的 app ID；不持有路径或启动授权 |
 | LVGL installer | 只扫描固定 inbox，只安装通过官方 key 和策略校验的包 |
 | App SDK | `RuntimeApplication`、`AppShell`、CMake helper、manifest 模板和 dev 打包脚本 |
-| 2048 | 确定性模型、撤销、手势和矿物主题动画参考应用 |
+| 2048 | 确定性模型、逐 tile 动画、原子持久化、撤销和矿物主题参考应用 |
 
 ## 安全原则
 
@@ -32,7 +32,7 @@ Host contracts：
 
 ```powershell
 cmake -S . -B build/host -DBUILD_TESTING=ON
-cmake --build build/host --target lvgl_platform_contract_tests game_2048_model_tests
+cmake --build build/host --target lvgl_platform_contract_tests game_2048_model_tests game_2048_visual_test
 ctest --test-dir build/host -C Release --output-on-failure
 node --test tests/host/*.test.js launcher/test/*.test.js manager/test/*.test.js tools/lvapp/test/*.test.mjs
 ```
