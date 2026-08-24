@@ -15,6 +15,7 @@ public:
     void probe(JQAsyncInfo& info);
     void start(JQAsyncInfo& info);
     void status(JQAsyncInfo& info);
+    void sendTouch(JQFunctionInfo& info);
 
 private:
     std::unique_ptr<Launcher> launcher_;

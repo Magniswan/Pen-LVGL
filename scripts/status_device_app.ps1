@@ -1,32 +1,22 @@
 [CmdletBinding()]
 param(
-    [string]$Adb = "adb",
-    [switch]$ShowLog
+    [string]$Adb = "adb"
 )
 
 $ErrorActionPreference = "Stop"
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot "device_app_common.ps1")
 Set-DeviceAdb -Path $Adb
-
 Assert-OneDevice
-$profile = Assert-TargetDevice
-$installed = Get-InstalledManifest
-$current = Get-DeviceText -Command "readlink '$DeviceRoot/current' 2>/dev/null || true"
-$state = Get-DeviceState
-$processes = Get-DeviceText -Command "ps | grep -E 'lvgl-supervisor|lvgl_session|lvgl_launcher|lvgl_poc|focus_timer|guardian_run.*/usr/bin/runDictPen|/usr/bin/miniapp' | grep -v grep"
 
-Write-Output "profile=$($profile.Profile) firmware=$($profile.Firmware) pcba=$($profile.Pcba)"
+$abi = Get-DeviceText -Command "uname -m"
+$installed = Get-InstalledManifest
+$state = Get-DeviceText -Command "if [ -f /run/lvgl-platform/session.status ]; then cat /run/lvgl-platform/session.status; fi"
+$processes = Get-DeviceText -Command "ps | grep -E 'lvgl-sessiond|/usr/bin/miniapp' | grep -v grep"
+
+Write-Output "abi=$abi"
 Write-Output "launcher_installed=$($null -ne $installed) appid=$DeviceAppId"
-Write-Output "current_release=$current"
-if ($state.Count -eq 0) {
-    Write-Output "state=idle"
-} else {
-    Write-Output "state=$($state.STATE) supervisor_pid=$($state.SUPERVISOR_PID) app_pid=$($state.APP_PID) result=$($state.RESULT) updated_at=$($state.UPDATED_AT)"
-}
-Write-Output "processes:"
+Write-Output "session_status:"
+Write-Output $state
+Write-Output "observed_processes:"
 Write-Output $processes
-if ($ShowLog) {
-    Write-Output "supervisor_log:"
-    Invoke-DeviceShell -Command "tail -n 80 '$DeviceLogRoot/supervisor.log' 2>/dev/null || true"
-}
+Write-Output "Status collection is read-only and never signals Falcon or LVGL processes."

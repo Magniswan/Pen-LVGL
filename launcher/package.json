@@ -2,8 +2,8 @@
   "name": "lvgl-launcher",
   "appName": "LVGL \u5E94\u7528",
   "appid": "8080992608050001",
-  "version": "0.1.0",
-  "description": "Falcon entry point for the standalone LVGL application",
+  "version": "0.2.0",
+  "description": "Persistent Falcon hole and authenticated touch bridge for LVGL applications",
   "icon": "app_icon.png",
   "quickjs": {
     "version": "20200705",
@@ -11,6 +11,7 @@
   },
   "single-js-bundle": false,
   "scripts": {
+    "test": "node --test test/launcher-source.test.js",
     "build": "aiot-cli -p",
     "build:dev": "aiot-cli",
     "build:prod": "aiot-cli -c -q -p"
