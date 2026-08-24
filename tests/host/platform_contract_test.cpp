@@ -223,11 +223,12 @@ void test_session_contract()
         "DRM_CRTC_ID=64\n"
         "DRM_OVERLAY_PLANE_ID=57\n"
         "DRM_OVERLAY_ZPOS=2\n"
-        "DISPLAY_X=0\n"
-        "DISPLAY_Y=107\n"
-        "DISPLAY_WIDTH=480\n"
-        "DISPLAY_HEIGHT=746\n"
+        "DISPLAY_X=107\n"
+        "DISPLAY_Y=0\n"
+        "DISPLAY_WIDTH=266\n"
+        "DISPLAY_HEIGHT=960\n"
         "PIXEL_FORMAT=ARGB8888\n"
+        "DISPLAY_ROTATION=270\n"
         "HOLE_SESSION_CERTIFIED=1\n";
     const auto parsed_profile = lvgl_platform::parse_session_profile(profile_text);
     expect(parsed_profile.ok() && parsed_profile.profile.logical_width == 960 &&

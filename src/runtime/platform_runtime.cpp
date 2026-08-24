@@ -207,9 +207,18 @@ int run_platform_application(RuntimeApplication& application,
     std::cout.flush();
 
     int result = 0;
+    bool readiness_reported = false;
     int last_metric_second = -1;
     while(!g_stop.load() && !application.stop_requested() && !display_context.failed.load()) {
         lv_timer_handler();
+        if(!readiness_reported && drm.has_presented_frame()) {
+            if(!control.signal_ready()) {
+                std::cerr << "RUNTIME error=session_ready detail=control_channel_failed\n";
+                result = 5;
+                break;
+            }
+            readiness_reported = true;
+        }
         const int elapsed = static_cast<int>(metrics.runtime_seconds());
         if(options.log_metrics && elapsed != last_metric_second && elapsed > 0) {
             last_metric_second = elapsed;

@@ -431,6 +431,7 @@ pid_t start_desktop(
         "LVGL_DISPLAY_Y=" + std::to_string(profile.display_y),
         "LVGL_DISPLAY_WIDTH=" + std::to_string(profile.display_width),
         "LVGL_DISPLAY_HEIGHT=" + std::to_string(profile.display_height),
+        "LVGL_DISPLAY_ROTATION=" + std::to_string(profile.display_rotation),
         "LVGL_PIXEL_FORMAT=" + profile.pixel_format,
     };
     std::vector<char*> environment_pointers;

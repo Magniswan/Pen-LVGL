@@ -23,6 +23,7 @@ struct CertifiedSessionProfile {
     std::int32_t display_y {0};
     std::int32_t display_width {0};
     std::int32_t display_height {0};
+    std::uint16_t display_rotation {0};
     bool hole_session_certified {false};
 };
 

@@ -10,11 +10,11 @@
 namespace lvgl_platform {
 namespace {
 
-constexpr std::array<std::string_view, 15> kKeys {
+constexpr std::array<std::string_view, 16> kKeys {
     "PROFILE_ID", "MACHINE", "LOGICAL_WIDTH", "LOGICAL_HEIGHT", "DRM_DEVICE",
     "DRM_CONNECTOR_ID", "DRM_CRTC_ID", "DRM_OVERLAY_PLANE_ID", "DRM_OVERLAY_ZPOS",
     "DISPLAY_X", "DISPLAY_Y", "DISPLAY_WIDTH", "DISPLAY_HEIGHT", "PIXEL_FORMAT",
-    "HOLE_SESSION_CERTIFIED",
+    "DISPLAY_ROTATION", "HOLE_SESSION_CERTIFIED",
 };
 
 bool valid_token(std::string_view value, std::size_t limit) noexcept
@@ -109,11 +109,15 @@ SessionProfileParseResult parse_session_profile(std::string_view contents)
                        profile.crtc_id) ||
        !parse_unsigned(values["DRM_OVERLAY_PLANE_ID"], 1,
                        std::numeric_limits<std::uint32_t>::max(), profile.overlay_plane_id) ||
-       !parse_signed(values["DRM_OVERLAY_ZPOS"], -128, 128, profile.overlay_zpos) ||
+       !parse_signed(values["DRM_OVERLAY_ZPOS"], 0, 128, profile.overlay_zpos) ||
        !parse_signed(values["DISPLAY_X"], 0, 4096, profile.display_x) ||
        !parse_signed(values["DISPLAY_Y"], 0, 4096, profile.display_y) ||
        !parse_signed(values["DISPLAY_WIDTH"], 80, 4096, profile.display_width) ||
        !parse_signed(values["DISPLAY_HEIGHT"], 80, 4096, profile.display_height) ||
+       !parse_integer(values["DISPLAY_ROTATION"], std::uint16_t {0}, std::uint16_t {270},
+                      profile.display_rotation) ||
+       (profile.display_rotation != 0 && profile.display_rotation != 90 &&
+        profile.display_rotation != 180 && profile.display_rotation != 270) ||
        values["HOLE_SESSION_CERTIFIED"] != "1") {
         result.detail = "SESSION_PROFILE_VALUE_INVALID";
         return result;

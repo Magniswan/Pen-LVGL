@@ -126,7 +126,7 @@ add_library(app_control STATIC
     src/runtime/app_control.cpp
 )
 target_include_directories(app_control PUBLIC src)
-target_link_libraries(app_control PUBLIC session_protocol)
+target_link_libraries(app_control PUBLIC session_protocol lvgl_platform_contract)
 target_compile_options(app_control PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
 add_library(app_shell STATIC
@@ -221,6 +221,7 @@ if(EXISTS "${DEVICE_LIBDRM_PATH}")
         device_libdrm
         lvgl::lvgl
         app_control
+        lvgl_platform_contract
     )
     target_compile_options(platform_runtime PRIVATE
         -Wall -Wextra -Wpedantic -Werror -Wno-pedantic
@@ -244,6 +245,7 @@ if(EXISTS "${DEVICE_LIBDRM_PATH}")
         apps/launcher/launcher_main.cpp
         apps/launcher/launcher_ui.cpp
     )
+    set_target_properties(lvgl_launcher PROPERTIES OUTPUT_NAME "lvgl-desktop")
     target_include_directories(lvgl_launcher PRIVATE src apps)
     target_link_libraries(lvgl_launcher PRIVATE
         platform_runtime
