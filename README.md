@@ -10,9 +10,9 @@
 |---|---|
 | Falcon manager | 安装、修复、升级、移除官方签名平台；保留 anti-rollback state |
 | Falcon launcher | 宿主持久 `<hole>`、启动固定 sessiond、转发认证触控；从不杀 miniapp |
-| `lvgl-sessiond` | 复验平台与应用、生成桌面 registry、独立监督一个前台 child |
+| `lvgl-sessiond` | 复验平台与应用、生成桌面 registry、持有 storage/installer brokers、独立监督一个前台 child |
 | LVGL desktop | 展示 sessiond 提供的 app ID；不持有路径或启动授权 |
-| LVGL installer | 只扫描固定 inbox，只安装通过官方 key 和策略校验的包 |
+| LVGL installer | 非 root UI 只使用 typed broker；sessiond 仅安装通过官方 key 和策略校验的包 |
 | App SDK | `RuntimeApplication`、`AppShell`、CMake helper、manifest 模板和 dev 打包脚本 |
 | 2048 | 确定性模型、逐 tile 动画、原子持久化、撤销和矿物主题参考应用 |
 

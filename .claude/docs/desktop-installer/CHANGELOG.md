@@ -2,6 +2,24 @@
 
 > 最新变更在最上方。
 
+## [2026-08-24] 将安装事务迁入 sessiond typed broker
+
+**类型**: security-fix
+**提交**: 65ded1f
+**风险**: HIGH
+
+### 安全性质
+
+- 修复所有 foreground child 强制非 root/seccomp 后，旧 installer 直访 root roots 必然失败的架构断层。
+- 只有 `top.lvgl.installer` 获得 installer socket；UI 不再加载 crypto 或调用 inbox/install root service。
+- 160/768-byte canonical 协议仅接受 scan/candidate/install-token，sessiond 重新扫描、官方验签、检查 anti-rollback 并提交事务。
+- broker protocol 已加入 contract/source/fuzz tests；AArch64 sessiond/installer 及 manager 全源码构建通过。
+
+### 回滚指南
+
+- 回滚：`git revert 65ded1f`
+- 副作用：在强制非 root/seccomp 模型下恢复无法工作的安装器；不得单独回滚后发布。
+
 ## [2026-08-24] 从固定收件箱安装官方应用
 
 **类型**: feat  

@@ -17,6 +17,7 @@
 | 利用 broad process kill | 只监督 exact child PID；源码测试禁止 broad kill |
 | 路径注入/链接替换/配额绕过应用状态 | 应用只持有 broker socket；sessiond 保持 0700 dirfd，闭合 record、`O_NOFOLLOW`、0600/nlink/type/bounds、manifest quota 与原子替换 |
 | 恶意签名应用横向移动 | UID/GID 独立且碰撞拒绝；rlimit；不可 dump；AArch64 seccomp 禁止网络/派生/挂载/写路径/exec，并限制 DRM ioctl |
+| 非 root installer 绕过签名或写 root roots | admin FD 只给固定 built-in installer；closed scan/candidate/install 协议；sessiond 独立重扫、官方验签、策略和事务提交 |
 | 操作员误选 ADB 设备 | 每个 host 入口都要求精确 serial，并在任何业务操作前复算与 manager 相同的 identity digest |
 | 恶意 parser 输入触发内存错误/UB | package/state/session coverage-guided harness；CI 使用 ASan/UBSan、输入长度/时间/RSS 限制并保存 crash artifact |
 | patch 普通用户态文件 | owner/mode/hash/signature 检查，失败关闭 |

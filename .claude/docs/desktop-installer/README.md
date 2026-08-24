@@ -14,9 +14,9 @@
 
 ```text
 /userdisk/apps/lvgl-inbox/*.lvapp
-  -> 固定目录安全扫描
+  -> sessiond 固定目录安全扫描
   -> 官方签名、manifest、平台策略、高水位检查
-  -> UI 以 SHA-512 token 选择
+  -> 非 root UI 通过 typed broker 以 SHA-512 token 选择
   -> 安装前重新扫描和重新验证
   -> 双槽原子安装 + policy state
   -> 回到 desktop
@@ -29,6 +29,8 @@
 
 - 唯一包信任根是编译进二进制的官方发布公钥。
 - 收件箱、应用和策略根路径均不可由调用者指定。
+- installer UI 不打开 root roots、不加载公钥/crypto provider；只有 sessiond broker 执行安全服务。
+- `LVGL_INSTALLER_FD` 只传给固定 built-in installer，协议只有 scan/candidate/install。
 - 包名、文件名和桌面元数据都不构成授权。
 - `top.lvgl.platform`、`top.lvgl.desktop`、`top.lvgl.installer` 不允许由普通应用包覆盖。
 - 目标设备拿不到有效 registry FD 时仅显示桌面自身，不回退到开发应用列表。

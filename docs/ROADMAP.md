@@ -7,7 +7,7 @@
 - 在认证目标内核上增加并验证 cgroup v2 CPU/memory 与只读 mount namespace；不支持所需内核能力时保持失败关闭。
 - 对 AArch64 seccomp 白名单做目标固件 syscall capture、负向逃逸测试和独立审计；当前实现已强制 UID/GID、rlimit、no-new-privs 与 seccomp，但尚无真机证据。
 - 为 storage broker 增加断电/磁盘满/并发恶意请求集成测试；当前已强制 manifest 的 `maxFiles`/`dataMiB` quota。
-- 增加应用卸载/隔离/rollback UI；保留 anti-rollback policy 和审计记录。
+- 在现有 sessiond typed installer broker 上增加应用卸载/隔离/rollback 命令与二次确认 UI；必须保留 anti-rollback policy、重新验证 previous release 并写入审计记录。当前 broker 只开放 scan/candidate/install。
 - 把现有 ADB `-Serial` + identity digest 防误操作门禁升级为“官方签名的 release authorization”；当前显式 digest 尚不是硬件 attestation，也不能抵御能伪造 ADB 响应的 root 对手。
 - 运行并持续运营新增的 package/state/session libFuzzer + ASan/UBSan CI：首次远端 workflow 尚待执行；后续加入长期 corpus、覆盖率阈值、定期长跑、crash 去重和修复 SLA。
 - 平台/app release 安装与启动路径完成独立安全审计。

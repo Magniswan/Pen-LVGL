@@ -14,6 +14,10 @@
 
 同 digest 的候选会去重并按 token 排序，避免目录顺序影响 UI。
 
+## Installer broker wire model
+
+request 固定 160 bytes，response 固定 768 bytes；两者均使用 `LVINST1`/v1、little-endian、非零 request ID 和全零 reserved/padding。response 的 candidate 区域固定限制 token 128、app ID 96、name 96、version 32、detail 256 bytes。非 candidate response 必须把 candidate 字段全部清零，阻止字段走私和歧义解释。
+
 ## Registry document
 
 每条 `RegisteredApplication` 保存 app ID、名称、版本、release counter、security epoch 与 capability count。编码必须唯一；解码拒绝无效布局、非法值和非 canonical 表示。

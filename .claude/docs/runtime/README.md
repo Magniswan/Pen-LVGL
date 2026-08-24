@@ -15,6 +15,7 @@ lvgl-sessiond
   ├─ bind /run/lvgl-platform/touch.sock
   ├─ derive registry and open verified entry FD
   ├─ capability-gate one root-owned quota storage broker
+  ├─ grant one fixed installer broker only to top.lvgl.installer
   └─ fork + UID/GID/rlimit + fexecve one foreground child
 foreground app
   ├─ DrmBackend: existing certified overlay plane only
@@ -46,6 +47,7 @@ foreground app
 - 应用崩溃返回桌面并显示一次安全错误；桌面连续失败三次退出到 Falcon。
 - 每个应用映射独立非 root UID/GID；UID 碰撞失败关闭；manifest memory/CPU/files/data limits 映射到 rlimit 与 broker quota。
 - `storage.private` 只传 broker socket，不传目录 FD/path/root/key；sessiond 采用 no-follow、0600、bounded read 和原子替换。
+- `LVGL_INSTALLER_FD` 只传给 fixed built-in installer；sessiond 保留 inbox/official trust/policy/write transaction，child 只能发送 typed token 请求。
 - seccomp 禁止网络 socket、进程派生/exec、mount/ptrace/kill、写路径和 executable mmap；运行期 DRM ioctl 仅 3 项。
 
 ## 详细文档

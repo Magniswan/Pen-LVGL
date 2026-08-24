@@ -13,6 +13,7 @@ Falcon launcher (alive)
 lvgl-sessiond (policy authority)
   ├─ reverify platform/profile
   ├─ canonicalize installed app registry ──FD──> LVGL desktop
+  ├─ fixed installer broker ───────────socket──> built-in installer only
   ├─ root-owned quota storage broker ──socket──> LVGL app
   ├─ open exact DRM device ───────────────FD───> LVGL app
   ├─ verify/fexecve + drop UID/GID + rlimit ───> LVGL app
@@ -36,6 +37,8 @@ Application roots：
 - inbox：`/userdisk/apps/lvgl-inbox`
 
 policy root 与可移除 payload 分开，避免卸载等价于清空 release/security high-water。release 安装在隔离 staging 中完成，fsync 后提交 state；平台再原子切换 `current`。
+
+安装器 child 与普通应用一样是非 root 且受 seccomp 限制，不能直接打开上述 root-owned roots。只有固定 `top.lvgl.installer` 获得 160/768-byte `SOCK_SEQPACKET` endpoint；sessiond 端接受 `scan`、`candidate(index)`、`install(SHA-512 token)`，重新扫描/验签/检查策略后才执行写事务。协议不含路径、公钥、manifest 或 shell 字段。
 
 ## Application launch
 
@@ -65,6 +68,7 @@ DRM runtime 只使用 signed profile 中已认证的 connector/CRTC/overlay/rect
 - session control：128-byte little-endian v1
 - touch protocol：56-byte little-endian v1
 - storage broker：96-byte header / `LVSTOR1` / v1
+- installer broker：160-byte request / 768-byte response / `LVINST1` / v1
 - application identity：小写 canonical reverse-domain ID
 
 不兼容变化必须提升对应 version/ABI/format，而不是静默复用旧值。

@@ -8,7 +8,7 @@
 |---|---|
 | `fuzz_package_verifier` | `.lvapp` header/manifest/table/payload/signature envelope、SHA 与 Ed25519 路径 |
 | `fuzz_release_state` | 单槽 release state、checksum/value validation、双槽选择与 split-brain |
-| `fuzz_session_protocol` | session control、desktop registry、storage request/response、touch frame、signed session profile、device profile JSON |
+| `fuzz_session_protocol` | session control、desktop registry、installer/storage request/response、touch frame、signed session profile、device profile JSON |
 
 `generate_fuzz_corpus` 用生产 encoder 生成有效 state/control/registry/storage/touch/profile seeds；package corpus 使用仓库内 dev/signed test vectors。dictionary 只帮助 libFuzzer 越过 magic/schema 分支，不构成接受规则。
 

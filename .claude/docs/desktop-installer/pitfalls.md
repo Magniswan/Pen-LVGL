@@ -8,6 +8,10 @@
 
 扫描用于展示，安装必须重读、重验签、重跑高水位策略。即便目录权限正确，也不能把 `InboxCandidate.installable` 当成最终授权。
 
+## 非 root UI 不能直接执行安装服务
+
+应用隔离后，installer child 无权打开 root-owned 0700 roots，seccomp 也禁止写路径。不要通过提权、放宽目录 mode 或开放写 syscall 修复；必须使用 sessiond 创建且只授予 built-in installer 的 typed broker。UI 不得自行提供 profile、capability policy、路径或公钥。
+
 ## Registry 不是启动授权
 
 桌面数据来自 sessiond，但桌面进程仍可能被 root 修改。launch 请求只能携带 canonical app ID；sessiond 必须在每次启动前重新验证磁盘状态和包。

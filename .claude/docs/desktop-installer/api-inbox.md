@@ -12,7 +12,7 @@ InboxStatus prepare_application_storage() noexcept;
 - `/userdisk/apps/lvgl-app-policy`
 - `/userdisk/apps/lvgl-inbox`
 
-调用方不能提供路径或密钥。
+调用方不能提供路径或密钥。这三个底层函数只在 root sessiond broker 内调用；非 root `InstallerUi` 不直接调用它们。
 
 ## 扫描
 
@@ -34,6 +34,17 @@ InboxInstallResult install_official_inbox_candidate(
 
 `token` 是扫描时包完整字节的 128 位小写十六进制 SHA-512。服务安装时不复用 UI 的旧验证对象，而是重新枚举、读取、验签并执行安装策略，降低选择到安装之间的替换风险。
 
+## Typed broker
+
+`InstallerClient` 从 `LVGL_INSTALLER_FD` 取得 sessiond 创建的 `SOCK_SEQPACKET` endpoint，验证 peer UID 为 root。固定 v1 协议：
+
+- 160-byte request：`scan`、`candidate(index)` 或 `install(token)`；
+- 768-byte response：bounded status/detail/count 或一个已判定 `InboxCandidate`；
+- magic `LVINST1`、非零 request ID、全零 reserved/padding；
+- 没有路径、公钥、调用方 policy、包 bytes、manifest 或命令文本。
+
+sessiond 只为 `top.lvgl.installer` 创建该 socket，并以认证 session profile 构造 policy。每个 candidate 查询都会重扫；install 再次按 token 重扫并执行完整官方验签/反回滚/事务链。child endpoint 有 30 秒收发 timeout。
+
 ## 应用注册表
 
 ```cpp
@@ -45,4 +56,4 @@ ApplicationRegistryDocument decode_application_registry(...);
 
 ## UI 生命周期
 
-`InstallerUi` 执行 inspect → verify → install → result。耗时安装由 LVGL timer 延后到确认画面呈现之后。成功后请求 `home()`，促使 sessiond 回桌面并重新生成 registry。
+`InstallerUi` 执行 inspect → verify → install → result，但只消费 broker 判定。耗时安装由 LVGL timer 延后到确认画面呈现之后。成功后请求 `home()`，促使 sessiond 回桌面并重新生成 registry。
