@@ -83,6 +83,7 @@ official .lvapp -> fixed inbox -> installer ├─ derive read-only desktop regi
 7. 会话只可向自己精确 fork 的子 PID 发信号；禁止 `pkill`、`killall` 或按名称终止。
 8. 当前目标 profile 未经真机认证，构建成功不能等同于硬件兼容。
 9. AppStorage 只允许使用 SDK broker API；把目录 FD 交给应用会绕过 quota 和记录策略。
+10. parser 修改必须同步运行 contract tests 与对应 fuzz harness；短时无 crash 不能表述为安全证明。
 
 ## 模块变更日志
 

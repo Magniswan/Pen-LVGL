@@ -9,7 +9,7 @@
 - 为 storage broker 增加断电/磁盘满/并发恶意请求集成测试；当前已强制 manifest 的 `maxFiles`/`dataMiB` quota。
 - 增加应用卸载/隔离/rollback UI；保留 anti-rollback policy 和审计记录。
 - 把现有 ADB `-Serial` + identity digest 防误操作门禁升级为“官方签名的 release authorization”；当前显式 digest 尚不是硬件 attestation，也不能抵御能伪造 ADB 响应的 root 对手。
-- 为 package/state/session parser 加 coverage-guided fuzzing 与 sanitizer CI。
+- 运行并持续运营新增的 package/state/session libFuzzer + ASan/UBSan CI：首次远端 workflow 尚待执行；后续加入长期 corpus、覆盖率阈值、定期长跑、crash 去重和修复 SLA。
 - 平台/app release 安装与启动路径完成独立安全审计。
 
 ## P0 — 硬件认证

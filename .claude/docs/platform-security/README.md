@@ -59,3 +59,6 @@ fixed inbox regular FD
 - `lvgl_platform_contract_tests`：密码学向量、包损坏、策略、状态、注册表。
 - `tools/lvapp/test`：Node 构建/签名/检查的正负向量。
 - `tests/host/inbox-source.test.js`：固定根、摘要令牌、无调用方路径/密钥。
+- `tests/fuzz/*`：package/state/session 的生产 parser harness、seed generator 与 dictionaries。
+- `.github/workflows/security-fuzz.yml`：Clang ASan/UBSan contracts 和 bounded libFuzzer smoke；当前仍需首次远端运行证据。
+- 详细运行方法与结论边界见 [根 fuzz 文档](../../../docs/security/fuzzing.md)。

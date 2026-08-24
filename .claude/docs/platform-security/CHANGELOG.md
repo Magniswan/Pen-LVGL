@@ -2,6 +2,25 @@
 
 > 最新变更在最上方；排查签名、安装或状态问题时优先阅读。
 
+## [2026-08-24] 增加 parser fuzz 与 sanitizer CI 基线
+
+**类型**: security-test
+**提交**: 55850f7
+**风险**: MEDIUM
+
+### 安全性质
+
+- 三个 libFuzzer target 直接覆盖生产 package/state/session 解析入口。
+- fuzz build 强制 Clang + ASan + UBSan；不能静默降级为未插桩运行。
+- encoder 生成有效深层 seeds，现有 signed/dev package vectors 进入 package corpus。
+- workflow 限制 time/length/RSS，失败保留 crash artifact，官方 actions 固定 commit SHA。
+- 当前只有严格交叉编译/YAML/host regression 证据；首次远端 sanitizer fuzz 仍未执行，不把 workflow 配置等同于测试通过。
+
+### 回滚指南
+
+- 回滚：`git revert 55850f7`
+- 副作用：移除持续 parser 内存安全/UB 探测，不影响目标二进制默认构建。
+
 ## [2026-08-24] 强制应用隔离与存储配额
 
 **类型**: security
