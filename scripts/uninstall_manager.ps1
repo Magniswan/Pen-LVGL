@@ -1,6 +1,8 @@
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = "High")]
 param(
     [string]$Adb = "adb",
+    [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9._:-]{1,128}$')][string]$Serial,
+    [Parameter(Mandatory)][ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$ExpectedIdentitySha256,
     [switch]$Force
 )
 
@@ -8,8 +10,9 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "device_app_common.ps1")
 $DeviceAppId = "8080992608050002"
 $DeviceAppName = "LVGL $([char]0x7BA1)$([char]0x7406)$([char]0x5668)"
-Set-DeviceAdb -Path $Adb
-Assert-OneDevice
+Set-DeviceTarget -Path $Adb -Serial $Serial `
+    -ExpectedIdentitySha256 $ExpectedIdentitySha256
+Assert-DeviceTarget
 
 if (-not $Force -and -not $PSCmdlet.ShouldProcess(
     "Falcon AppID $DeviceAppId", "Uninstall only the LVGL platform manager AMR")) {

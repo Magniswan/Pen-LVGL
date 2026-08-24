@@ -1,13 +1,16 @@
 [CmdletBinding()]
 param(
     [string]$Adb = "adb",
+    [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9._:-]{1,128}$')][string]$Serial,
+    [Parameter(Mandatory)][ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$ExpectedIdentitySha256,
     [string]$AmrPath = ""
 )
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot "device_app_common.ps1")
-Set-DeviceAdb -Path $Adb
+Set-DeviceTarget -Path $Adb -Serial $Serial `
+    -ExpectedIdentitySha256 $ExpectedIdentitySha256
 
 $package = Get-Content -Raw -Encoding UTF8 (Join-Path $ProjectRoot "launcher/package.json") |
     ConvertFrom-Json
@@ -22,7 +25,7 @@ if (-not (Test-Path -LiteralPath $resolvedAmr -PathType Leaf)) {
     throw "Launcher AMR not found: $resolvedAmr"
 }
 
-Assert-OneDevice
+Assert-DeviceTarget
 $abi = Get-DeviceText -Command "uname -m"
 if ($abi -ne "aarch64") { throw "Unsupported ABI: $abi" }
 Assert-AppIdAvailable
