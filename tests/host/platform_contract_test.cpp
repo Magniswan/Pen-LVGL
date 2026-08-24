@@ -4,6 +4,7 @@
 #include "lvgl_platform/rollback_policy.h"
 #include "lvgl_platform/release_state.h"
 #include "lvgl_platform/safe_path.h"
+#include "lvgl_platform/state_store.h"
 #include "lvgl_platform/touch_protocol.h"
 #include "lvgl_platform/trust_store.h"
 
@@ -370,6 +371,13 @@ void test_release_state()
     if(!first.has_value()) return;
     const auto encoded_one = lvgl_platform::encode_release_state(*first, *crypto);
     expect(encoded_one.ok(), encoded_one.detail.c_str());
+#if defined(_WIN32)
+    expect(lvgl_platform::persist_release_state("C:/unused", *first, *crypto).status ==
+               lvgl_platform::StateStoreStatus::unsupported_platform &&
+               lvgl_platform::load_release_state("C:/unused", first->app_id, *crypto).status ==
+                   lvgl_platform::StateStoreStatus::unsupported_platform,
+           "atomic state storage fails explicitly on non-POSIX hosts");
+#endif
     const auto decoded_one = lvgl_platform::decode_release_state(
         encoded_one.bytes.data(), encoded_one.bytes.size(), *crypto);
     expect(decoded_one.ok() && decoded_one.state.app_id == first->app_id &&

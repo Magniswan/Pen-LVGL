@@ -55,6 +55,7 @@ add_library(lvgl_platform_contract STATIC
     platform/src/profile/device_profile.cpp
     platform/src/storage/release_state.cpp
     platform/src/storage/safe_path.cpp
+    platform/src/storage/state_store.cpp
     platform/src/trust/trust_store.cpp
 )
 target_include_directories(lvgl_platform_contract PUBLIC
