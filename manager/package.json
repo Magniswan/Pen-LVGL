@@ -1,0 +1,24 @@
+{
+  "name": "lvgl-platform-manager",
+  "appName": "LVGL 管理器",
+  "appid": "8080992608050002",
+  "version": "0.1.0",
+  "description": "Official-key-only LVGL platform install, repair, upgrade, and removal manager",
+  "icon": "../launcher/app_icon.png",
+  "quickjs": {
+    "version": "20200705",
+    "bigNum": false
+  },
+  "single-js-bundle": false,
+  "scripts": {
+    "test": "node --test test/manager-source.test.js test/manager-state.test.js",
+    "build": "aiot-cli -p",
+    "build:prod": "aiot-cli -c -q -p"
+  },
+  "dependencies": {
+    "falcon-ui": "1.0.3"
+  },
+  "devDependencies": {
+    "aiot-vue-cli": "1.0.32"
+  }
+}

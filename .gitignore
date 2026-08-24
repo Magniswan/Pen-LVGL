@@ -7,6 +7,11 @@
 /launcher/.falcon_tmp/
 /launcher/*.amr
 /launcher/libs/**/*.so
+/manager/node_modules/
+/manager/.falcon_/
+/manager/.falcon_tmp/
+/manager/*.amr
+/manager/libs/**/*.so
 
 # The vendored LVGL build uses the root build files and src/. Keep upstream
 # demos, generated reference images, docs, and development tooling out of this
