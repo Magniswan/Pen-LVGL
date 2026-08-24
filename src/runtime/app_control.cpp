@@ -9,6 +9,20 @@
 #include <sys/socket.h>
 
 namespace dictpen {
+namespace {
+
+bool send_control(
+    int descriptor, lvgl_platform::SessionControlCommand command,
+    std::string_view app_id = {})
+{
+    if(descriptor < 0) return false;
+    const auto bytes = lvgl_platform::encode_session_control(
+        {command, 0, std::string(app_id)});
+    return send(descriptor, bytes.data(), bytes.size(), MSG_NOSIGNAL) ==
+           static_cast<ssize_t>(bytes.size());
+}
+
+}  // namespace
 
 AppControl::AppControl()
 {
@@ -29,34 +43,42 @@ AppControl::AppControl()
 bool AppControl::signal_ready() const
 {
     if(session_fd_ < 0) return true;
-    const auto bytes = lvgl_platform::encode_session_control(
-        {lvgl_platform::SessionControlCommand::ready, 0});
-    return send(session_fd_, bytes.data(), bytes.size(), MSG_NOSIGNAL) ==
-           static_cast<ssize_t>(bytes.size());
+    return send_control(session_fd_, lvgl_platform::SessionControlCommand::ready);
 }
 
 bool AppControl::available() const
 {
-    return fd_ >= 0;
+    return fd_ >= 0 || session_fd_ >= 0;
 }
 
 bool AppControl::launch(AppId app_id) const
 {
+    if(session_fd_ >= 0) {
+        const auto* app = find_app(app_id);
+        return app != nullptr && launch(app->stable_id);
+    }
     return send_session_message(fd_, SessionCommand::launch, app_id);
+}
+
+bool AppControl::launch(std::string_view app_id) const
+{
+    return session_fd_ >= 0 && lvgl_platform::valid_session_app_id(app_id) &&
+           send_control(session_fd_, lvgl_platform::SessionControlCommand::launch_application,
+                        app_id);
 }
 
 bool AppControl::home() const
 {
+    if(session_fd_ >= 0) {
+        return send_control(session_fd_, lvgl_platform::SessionControlCommand::home);
+    }
     return send_session_message(fd_, SessionCommand::home, AppId::none);
 }
 
 bool AppControl::exit_session() const
 {
     if(session_fd_ >= 0) {
-        const auto bytes = lvgl_platform::encode_session_control(
-            {lvgl_platform::SessionControlCommand::exit_session, 0});
-        return send(session_fd_, bytes.data(), bytes.size(), MSG_NOSIGNAL) ==
-               static_cast<ssize_t>(bytes.size());
+        return send_control(session_fd_, lvgl_platform::SessionControlCommand::exit_session);
     }
     return send_session_message(fd_, SessionCommand::exit_session, AppId::none);
 }

@@ -4,9 +4,8 @@ namespace dictpen {
 namespace {
 
 constexpr AppDescriptor kApps[] {
-    {AppId::launcher, "launcher", "应用", "lvgl_launcher", "\xEF\x80\x95", "选择应用"},
-    {AppId::poc, "poc", "LVGL 体验", "lvgl_poc", "\xEF\x84\x9B", "交互与设备诊断"},
-    {AppId::focus_timer, "focus_timer", "专注计时", "focus_timer", "\xEF\x89\x92", "快速开始一轮专注"},
+    {AppId::launcher, "top.lvgl.desktop", "应用", "lvgl-desktop", "\xEF\x80\x95", "选择应用"},
+    {AppId::game_2048, "top.lvgl.game2048", "2048", "lvgl-2048", "\xEF\x84\x9B", "融合矿石，建立最高分"},
 };
 
 }  // namespace

@@ -403,9 +403,9 @@ bool inherit_descriptor(int descriptor) noexcept
     return flags >= 0 && ::fcntl(descriptor, F_SETFD, flags & ~FD_CLOEXEC) == 0;
 }
 
-pid_t start_desktop(
-    int executable, int control, int touch,
-    const lvgl_platform::CertifiedSessionProfile& profile) noexcept
+pid_t start_program(
+    int executable, int control, int touch, std::string_view program_id,
+    const lvgl_platform::CertifiedSessionProfile& profile, std::string_view previous_error) noexcept
 {
     const pid_t child = ::fork();
     if(child != 0) return child;
@@ -433,12 +433,16 @@ pid_t start_desktop(
         "LVGL_DISPLAY_HEIGHT=" + std::to_string(profile.display_height),
         "LVGL_DISPLAY_ROTATION=" + std::to_string(profile.display_rotation),
         "LVGL_PIXEL_FORMAT=" + profile.pixel_format,
+        "LVGL_FOREGROUND_APP_ID=" + std::string(program_id),
     };
+    if(!previous_error.empty()) {
+        environment.push_back("LVGL_APP_ERROR=" + std::string(previous_error));
+    }
     std::vector<char*> environment_pointers;
     for(auto& item : environment) environment_pointers.push_back(item.data());
     environment_pointers.push_back(nullptr);
-    char name[] = "lvgl-desktop";
-    char* const arguments[] {name, nullptr};
+    std::string name(program_id == "top.lvgl.desktop" ? "lvgl-desktop" : "lvgl-application");
+    char* const arguments[] {name.data(), nullptr};
     ::fexecve(executable, arguments, environment_pointers.data());
     _exit(127);
 }
@@ -453,6 +457,165 @@ int child_result(pid_t child, int options, bool& exited) noexcept
     if(WIFEXITED(status)) return WEXITSTATUS(status);
     if(WIFSIGNALED(status)) return 128 + WTERMSIG(status);
     return 255;
+}
+
+const char* built_in_program_path(std::string_view app_id) noexcept
+{
+    if(app_id == "top.lvgl.desktop") return "bin/lvgl-desktop";
+    if(app_id == "top.lvgl.game2048") return "bin/lvgl-2048";
+    return nullptr;
+}
+
+FileDescriptor open_verified_program(const VerifiedRelease& release, std::string_view app_id)
+{
+    const char* path = built_in_program_path(app_id);
+    if(path == nullptr) return {};
+    const auto manifest_file = std::find_if(
+        release.verification.manifest.files.begin(), release.verification.manifest.files.end(),
+        [path](const auto& file) { return file.path == path; });
+    auto executable = open_release_file(release.directory.get(), path);
+    if(manifest_file == release.verification.manifest.files.end() ||
+       manifest_file->role != "executable" || manifest_file->mode != 0755 ||
+       !trusted_regular(executable.get(), 0755, manifest_file->size)) {
+        return {};
+    }
+    return executable;
+}
+
+enum class ForegroundAction : std::uint8_t { failure, exit_session, launch, home };
+
+struct ForegroundOutcome {
+    ForegroundAction action {ForegroundAction::failure};
+    std::string app_id;
+    int result {0};
+};
+
+ForegroundOutcome run_foreground(
+    int executable, std::string_view program_id, std::string_view previous_error,
+    const lvgl_platform::CertifiedSessionProfile& profile, int run_directory,
+    int external_touch_socket, lvgl_platform::TouchRouter& router,
+    lvgl_platform::SessionStatusDocument& status)
+{
+    ForegroundOutcome outcome;
+    int control_pair[2] {-1, -1};
+    int touch_pair[2] {-1, -1};
+    if(::socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, control_pair) != 0 ||
+       ::socketpair(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0, touch_pair) != 0) {
+        if(control_pair[0] >= 0) ::close(control_pair[0]);
+        if(control_pair[1] >= 0) ::close(control_pair[1]);
+        outcome.result = 76;
+        return outcome;
+    }
+    FileDescriptor parent_control(control_pair[0]);
+    FileDescriptor child_control(control_pair[1]);
+    FileDescriptor parent_touch(touch_pair[0]);
+    FileDescriptor child_touch(touch_pair[1]);
+    const pid_t child = start_program(
+        executable, child_control.get(), child_touch.get(), program_id, profile, previous_error);
+    if(child <= 1) {
+        outcome.result = 77;
+        return outcome;
+    }
+    ::setpgid(child, child);
+    child_control.reset();
+    child_touch.reset();
+
+    const auto ready_deadline = monotonic_microseconds() +
+                                static_cast<std::uint64_t>(kReadyTimeoutMilliseconds) * 1000ULL;
+    const bool desktop = program_id == "top.lvgl.desktop";
+    bool ready = false;
+    bool requested = false;
+    bool exited = false;
+    std::array<std::uint8_t, lvgl_platform::kTouchFrameWireSize> touch_frame {};
+    std::array<std::uint8_t, lvgl_platform::kSessionControlSize> control_frame {};
+
+    while(!exited && g_stop == 0 && !requested) {
+        pollfd descriptors[] {
+            {parent_control.get(), POLLIN | POLLHUP, 0},
+            {external_touch_socket, static_cast<short>(ready ? POLLIN : 0), 0},
+        };
+        const int polled = ::poll(descriptors, 2, 100);
+        if(polled < 0 && errno != EINTR) {
+            outcome.result = 78;
+            break;
+        }
+        if(polled > 0 && (descriptors[0].revents & POLLIN) != 0) {
+            const auto received = ::recv(
+                parent_control.get(), control_frame.data(), control_frame.size(),
+                MSG_DONTWAIT | MSG_TRUNC);
+            lvgl_platform::SessionControlMessage message;
+            if(received != static_cast<ssize_t>(control_frame.size()) ||
+               !lvgl_platform::decode_session_control(
+                   control_frame.data(), control_frame.size(), message)) {
+                outcome.result = 79;
+                break;
+            }
+            if(message.command == lvgl_platform::SessionControlCommand::ready && !ready) {
+                ready = true;
+                status.state = lvgl_platform::SessionState::ready;
+                status.hole_ready = true;
+                status.input_ready = true;
+                if(!atomic_status(run_directory, status)) {
+                    outcome.result = 80;
+                    break;
+                }
+            } else if(message.command == lvgl_platform::SessionControlCommand::exit_session && ready) {
+                outcome.action = ForegroundAction::exit_session;
+                requested = true;
+            } else if(message.command == lvgl_platform::SessionControlCommand::launch_application &&
+                      ready && desktop && built_in_program_path(message.app_id) != nullptr &&
+                      message.app_id != "top.lvgl.desktop") {
+                outcome.action = ForegroundAction::launch;
+                outcome.app_id = std::move(message.app_id);
+                requested = true;
+            } else if(message.command == lvgl_platform::SessionControlCommand::home && ready &&
+                      !desktop) {
+                outcome.action = ForegroundAction::home;
+                requested = true;
+            } else {
+                outcome.result = 81;
+                break;
+            }
+        }
+        if(polled > 0 && ready && (descriptors[1].revents & POLLIN) != 0) {
+            const auto received = ::recv(
+                external_touch_socket, touch_frame.data(), touch_frame.size(),
+                MSG_DONTWAIT | MSG_TRUNC);
+            const auto routed = router.route(
+                touch_frame.data(), received > 0 ? static_cast<std::size_t>(received) : 0,
+                monotonic_microseconds());
+            if(routed.ok()) {
+                const auto encoded = lvgl_platform::encode_touch_frame(routed.frame);
+                if(::send(parent_touch.get(), encoded.data(), encoded.size(), MSG_NOSIGNAL) !=
+                   static_cast<ssize_t>(encoded.size())) {
+                    outcome.result = 82;
+                    break;
+                }
+            }
+        }
+        if(!ready && monotonic_microseconds() >= ready_deadline) {
+            outcome.result = 83;
+            break;
+        }
+        const int child_exit = child_result(child, WNOHANG, exited);
+        if(exited) outcome.result = child_exit == 0 ? 84 : child_exit;
+    }
+
+    if(!exited) {
+        ::kill(child, SIGTERM);
+        for(int attempt = 0; attempt < 20 && !exited; ++attempt) {
+            ::usleep(50000);
+            const int child_exit = child_result(child, WNOHANG, exited);
+            if(exited && outcome.result == 0 && !requested) outcome.result = child_exit;
+        }
+        if(!exited) {
+            ::kill(child, SIGKILL);
+            const int child_exit = child_result(child, 0, exited);
+            if(outcome.result == 0 && !requested) outcome.result = child_exit;
+        }
+    }
+    if(g_stop != 0 && outcome.result == 0) outcome.result = 143;
+    return outcome;
 }
 
 }  // namespace
@@ -496,137 +659,59 @@ int main(int argc, char** argv)
         return 74;
     }
 
-    auto desktop = open_release_file(release.directory.get(), "bin/lvgl-desktop");
-    const auto desktop_manifest = std::find_if(
-        release.verification.manifest.files.begin(), release.verification.manifest.files.end(),
-        [](const auto& file) { return file.path == "bin/lvgl-desktop"; });
-    if(desktop_manifest == release.verification.manifest.files.end() ||
-       desktop_manifest->role != "executable" ||
-       !trusted_regular(desktop.get(), 0755, desktop_manifest->size)) {
-        status.state = lvgl_platform::SessionState::error;
-        status.result = 75;
-        atomic_status(run_directory.get(), status);
-        cleanup_socket();
-        return 75;
-    }
-
-    int control_pair[2] {-1, -1};
-    int touch_pair[2] {-1, -1};
-    if(::socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, control_pair) != 0 ||
-       ::socketpair(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0, touch_pair) != 0) {
-        if(control_pair[0] >= 0) ::close(control_pair[0]);
-        if(control_pair[1] >= 0) ::close(control_pair[1]);
-        status.state = lvgl_platform::SessionState::error;
-        status.result = 76;
-        atomic_status(run_directory.get(), status);
-        cleanup_socket();
-        return 76;
-    }
-    FileDescriptor parent_control(control_pair[0]);
-    FileDescriptor child_control(control_pair[1]);
-    FileDescriptor parent_touch(touch_pair[0]);
-    FileDescriptor child_touch(touch_pair[1]);
-    const pid_t child = start_desktop(
-        desktop.get(), child_control.get(), child_touch.get(), release.profile);
-    if(child <= 1) {
-        status.state = lvgl_platform::SessionState::error;
-        status.result = 77;
-        atomic_status(run_directory.get(), status);
-        cleanup_socket();
-        return 77;
-    }
-    ::setpgid(child, child);
-    child_control.reset();
-    child_touch.reset();
-    desktop.reset();
-
     lvgl_platform::TouchRouter router(
         nonce, release.profile.logical_width, release.profile.logical_height);
-    const auto ready_deadline = monotonic_microseconds() +
-                                static_cast<std::uint64_t>(kReadyTimeoutMilliseconds) * 1000ULL;
-    bool ready = false;
-    bool exit_requested = false;
-    bool exited = false;
+    std::string foreground = "top.lvgl.desktop";
+    std::string previous_error;
+    unsigned int desktop_failures = 0;
     int result = 0;
-    std::array<std::uint8_t, lvgl_platform::kTouchFrameWireSize> touch_frame {};
-    std::array<std::uint8_t, lvgl_platform::kSessionControlSize> control_frame {};
-
-    while(!exited && g_stop == 0 && !exit_requested) {
-        pollfd descriptors[] {
-            {parent_control.get(), POLLIN | POLLHUP, 0},
-            {touch_socket.get(), static_cast<short>(ready ? POLLIN : 0), 0},
-        };
-        const int polled = ::poll(descriptors, 2, 100);
-        if(polled < 0 && errno != EINTR) {
-            result = 78;
+    bool exit_requested = false;
+    while(g_stop == 0 && !exit_requested) {
+        status.state = lvgl_platform::SessionState::starting;
+        status.result = 0;
+        status.hole_ready = false;
+        status.input_ready = false;
+        if(!atomic_status(run_directory.get(), status)) {
+            result = 74;
             break;
         }
-        if(polled > 0 && (descriptors[0].revents & POLLIN) != 0) {
-            const auto received = ::recv(
-                parent_control.get(), control_frame.data(), control_frame.size(),
-                MSG_DONTWAIT | MSG_TRUNC);
-            lvgl_platform::SessionControlMessage message;
-            if(received != static_cast<ssize_t>(control_frame.size()) ||
-               !lvgl_platform::decode_session_control(
-                   control_frame.data(), control_frame.size(), message)) {
-                result = 79;
-                break;
+        auto executable = open_verified_program(release, foreground);
+        if(!executable.valid()) {
+            if(foreground != "top.lvgl.desktop") {
+                previous_error = "应用入口未包含在已验证的平台发行版中";
+                foreground = "top.lvgl.desktop";
+                continue;
             }
-            if(message.command == lvgl_platform::SessionControlCommand::ready && !ready) {
-                ready = true;
-                status.state = lvgl_platform::SessionState::ready;
-                status.hole_ready = true;
-                status.input_ready = true;
-                if(!atomic_status(run_directory.get(), status)) {
-                    result = 80;
-                    break;
-                }
-            } else if(message.command == lvgl_platform::SessionControlCommand::exit_session && ready) {
-                exit_requested = true;
-            } else {
-                result = 81;
-                break;
-            }
-        }
-        if(polled > 0 && ready && (descriptors[1].revents & POLLIN) != 0) {
-            const auto received = ::recv(
-                touch_socket.get(), touch_frame.data(), touch_frame.size(),
-                MSG_DONTWAIT | MSG_TRUNC);
-            const auto now = monotonic_microseconds();
-            const auto routed = router.route(
-                touch_frame.data(), received > 0 ? static_cast<std::size_t>(received) : 0, now);
-            if(routed.ok()) {
-                const auto encoded = lvgl_platform::encode_touch_frame(routed.frame);
-                if(::send(parent_touch.get(), encoded.data(), encoded.size(), MSG_NOSIGNAL) !=
-                   static_cast<ssize_t>(encoded.size())) {
-                    result = 82;
-                    break;
-                }
-            }
-        }
-        if(!ready && monotonic_microseconds() >= ready_deadline) {
-            result = 83;
+            result = 75;
             break;
         }
-        result = child_result(child, WNOHANG, exited);
-    }
-
-    if(exited && !exit_requested && g_stop == 0 && result == 0) result = 84;
-
-    if(!exited) {
-        ::kill(child, SIGTERM);
-        for(int attempt = 0; attempt < 20 && !exited; ++attempt) {
-            ::usleep(50000);
-            const int child_exit = child_result(child, WNOHANG, exited);
-            if(exited && result == 0) result = child_exit;
+        const auto outcome = run_foreground(
+            executable.get(), foreground, previous_error, release.profile,
+            run_directory.get(), touch_socket.get(), router, status);
+        previous_error.clear();
+        if(g_stop != 0) {
+            result = outcome.result == 0 ? 143 : outcome.result;
+            break;
         }
-        if(!exited) {
-            ::kill(child, SIGKILL);
-            const int child_exit = child_result(child, 0, exited);
-            if(result == 0) result = child_exit;
+        if(outcome.action == ForegroundAction::exit_session) {
+            exit_requested = true;
+            result = 0;
+        } else if(outcome.action == ForegroundAction::launch) {
+            foreground = outcome.app_id;
+            desktop_failures = 0;
+        } else if(outcome.action == ForegroundAction::home) {
+            foreground = "top.lvgl.desktop";
+            desktop_failures = 0;
+        } else if(foreground != "top.lvgl.desktop") {
+            previous_error = "应用异常退出，代码 " + std::to_string(outcome.result);
+            foreground = "top.lvgl.desktop";
+            desktop_failures = 0;
+        } else {
+            result = outcome.result == 0 ? 84 : outcome.result;
+            if(++desktop_failures >= 3) break;
+            previous_error = "桌面已从异常退出中恢复";
         }
     }
-    if(g_stop != 0 && result == 0) result = 143;
     status.state = result == 0 ? lvgl_platform::SessionState::stopped
                                : lvgl_platform::SessionState::error;
     status.result = result;

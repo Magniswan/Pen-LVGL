@@ -202,7 +202,7 @@ void test_touch_protocol()
 void test_session_contract()
 {
     const auto ready_wire = lvgl_platform::encode_session_control(
-        {lvgl_platform::SessionControlCommand::ready, 0});
+        {lvgl_platform::SessionControlCommand::ready, 0, {}});
     lvgl_platform::SessionControlMessage control;
     expect(lvgl_platform::decode_session_control(ready_wire.data(), ready_wire.size(), control) &&
                control.command == lvgl_platform::SessionControlCommand::ready,
@@ -212,6 +212,19 @@ void test_session_contract()
     expect(!lvgl_platform::decode_session_control(
                corrupt_control.data(), corrupt_control.size(), control),
            "child control protocol rejects layout changes");
+    const auto launch_wire = lvgl_platform::encode_session_control(
+        {lvgl_platform::SessionControlCommand::launch_application, 0,
+         "top.lvgl.game2048"});
+    expect(lvgl_platform::decode_session_control(
+               launch_wire.data(), launch_wire.size(), control) &&
+               control.command == lvgl_platform::SessionControlCommand::launch_application &&
+               control.app_id == "top.lvgl.game2048",
+           "control protocol carries one canonical application id");
+    auto launch_with_trailing_data = launch_wire;
+    launch_with_trailing_data.back() = 1;
+    expect(!lvgl_platform::decode_session_control(
+               launch_with_trailing_data.data(), launch_with_trailing_data.size(), control),
+           "control protocol rejects nonzero reserved data");
 
     constexpr std::string_view profile_text =
         "PROFILE_ID=youdao-y01-4.8.6\n"

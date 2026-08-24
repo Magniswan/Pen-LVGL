@@ -8,8 +8,7 @@ namespace dictpen {
 enum class AppId : uint32_t {
     none = 0,
     launcher = 1,
-    poc = 2,
-    focus_timer = 3,
+    game_2048 = 2,
 };
 
 struct AppDescriptor {

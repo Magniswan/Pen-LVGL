@@ -31,3 +31,13 @@ test('hole readiness waits for authenticated child control readiness', () => {
   assert.match(source, /kReadyTimeoutMilliseconds/);
   assert.match(source, /TouchRouter router/);
 });
+
+test('session daemon supervises one independent foreground application', () => {
+  assert.match(source, /ForegroundAction::launch/);
+  assert.match(source, /SessionControlCommand::launch_application/);
+  assert.match(source, /SessionControlCommand::home/);
+  assert.match(source, /run_foreground\(/);
+  assert.match(source, /open_verified_program\(release, foreground\)/);
+  assert.match(source, /foreground = "top\.lvgl\.desktop"/);
+  assert.match(source, /应用异常退出/);
+});
