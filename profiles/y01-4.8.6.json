@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "profileId": "youdao-y01-4.8.6",
+  "match": {
+    "model": "OVERHEAD_Y01_SKU_CHN_PRO",
+    "firmware": "4.8.6",
+    "pcba": "RK3562_Orange_V0",
+    "machine": "aarch64",
+    "libc": "glibc-2.36",
+    "bits": 64
+  },
+  "logicalScreen": { "width": 960, "height": 266 },
+  "physicalScreen": { "width": 480, "height": 960 },
+  "displayTransform": { "clockwiseDegrees": 270, "offsetX": 107, "offsetY": 0 },
+  "touchTransform": { "clockwiseDegrees": 270, "offsetX": 113, "offsetY": 0 },
+  "devices": {
+    "drm": "/dev/dri/card0",
+    "connector": "DSI-1",
+    "touchName": "hyn_ts",
+    "pixelFormat": "XRGB8888"
+  },
+  "requirements": { "overlayPlane": true, "falconTouchForwarding": true },
+  "certification": {
+    "status": "legacy-poc-evidence",
+    "firmwareBuild": "2025-11-13",
+    "evidence": ["docs/m5-evaluation.md", "docs/launcher-evaluation.md"],
+    "holeSessionCertified": false
+  }
+}

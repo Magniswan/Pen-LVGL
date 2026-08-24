@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lvgl-platform.local/schema/device-profile-v1.json",
+  "title": "LVGL dictionary-pen device profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "profileId", "match", "logicalScreen", "physicalScreen",
+    "displayTransform", "touchTransform", "devices", "requirements", "certification"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "profileId": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "match": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "firmware", "pcba", "machine", "libc", "bits"],
+      "properties": {
+        "model": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "firmware": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "pcba": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "machine": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "libc": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "bits": { "enum": [32, 64] }
+      }
+    },
+    "logicalScreen": { "$ref": "#/$defs/size" },
+    "physicalScreen": { "$ref": "#/$defs/size" },
+    "displayTransform": { "$ref": "#/$defs/transform" },
+    "touchTransform": { "$ref": "#/$defs/transform" },
+    "devices": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["drm", "connector", "touchName", "pixelFormat"],
+      "properties": {
+        "drm": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "connector": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "touchName": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "pixelFormat": { "type": "string", "minLength": 1, "maxLength": 255 }
+      }
+    },
+    "requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["overlayPlane", "falconTouchForwarding"],
+      "properties": {
+        "overlayPlane": { "type": "boolean" },
+        "falconTouchForwarding": { "type": "boolean" }
+      }
+    },
+    "certification": { "type": "object" }
+  },
+  "$defs": {
+    "size": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1, "maximum": 8192 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 8192 }
+      }
+    },
+    "transform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clockwiseDegrees", "offsetX", "offsetY"],
+      "properties": {
+        "clockwiseDegrees": { "enum": [0, 90, 180, 270] },
+        "offsetX": { "type": "integer", "minimum": -8192, "maximum": 8192 },
+        "offsetY": { "type": "integer", "minimum": -8192, "maximum": 8192 }
+      }
+    }
+  }
+}

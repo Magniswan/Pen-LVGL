@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(lvgl_dictpen_poc VERSION 0.1.0 LANGUAGES C CXX)
 
+include(CTest)
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 17)
@@ -14,6 +16,46 @@ set(CONFIG_LV_BUILD_DEMOS OFF CACHE BOOL "" FORCE)
 set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(CONFIG_LV_USE_THORVG_INTERNAL OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/lvgl EXCLUDE_FROM_ALL)
+
+add_library(lvgl_platform_contract STATIC
+    platform/src/ipc/touch_protocol.cpp
+    platform/src/profile/device_profile.cpp
+)
+target_include_directories(lvgl_platform_contract PUBLIC
+    platform/include
+)
+target_include_directories(lvgl_platform_contract PRIVATE
+    third_party/lvgl/src/libs/thorvg
+)
+if(MSVC)
+    target_compile_options(lvgl_platform_contract PRIVATE /W4 /WX)
+else()
+    target_compile_options(lvgl_platform_contract PRIVATE
+        -Wall -Wextra -Wpedantic -Werror
+    )
+endif()
+
+if(BUILD_TESTING)
+    add_executable(lvgl_platform_contract_tests
+        tests/host/platform_contract_test.cpp
+    )
+    target_link_libraries(lvgl_platform_contract_tests PRIVATE
+        lvgl_platform_contract
+    )
+    if(MSVC)
+        target_compile_options(lvgl_platform_contract_tests PRIVATE /W4 /WX)
+    else()
+        target_compile_options(lvgl_platform_contract_tests PRIVATE
+            -Wall -Wextra -Wpedantic -Werror
+        )
+    endif()
+    target_compile_definitions(lvgl_platform_contract_tests PRIVATE
+        LVGL_PLATFORM_TEST_PROFILE="${CMAKE_SOURCE_DIR}/profiles/y01-4.8.6.json"
+    )
+    add_test(NAME lvgl_platform_contract_tests
+        COMMAND lvgl_platform_contract_tests
+    )
+endif()
 
 add_library(device_profile STATIC
     src/platform/device_profile/device_profile.cpp
