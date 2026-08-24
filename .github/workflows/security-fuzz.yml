@@ -1,0 +1,90 @@
+name: Security fuzz and sanitizers
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sanitizer-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CC: clang
+      CXX: clang++
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:strict_string_checks=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Configure ASan and UBSan contracts
+        run: >-
+          cmake -S . -B build/sanitized -G Ninja
+          -DBUILD_TESTING=ON
+          -DLVGL_ENABLE_SANITIZERS=ON
+          -DLVGL_BUILD_SDK_TEMPLATE=OFF
+      - name: Build contract tests
+        run: >-
+          cmake --build build/sanitized --target
+          lvgl_platform_contract_tests game_2048_model_tests
+      - name: Run sanitizer contracts
+        run: >-
+          ctest --test-dir build/sanitized --output-on-failure
+          -R "^(lvgl_platform_contract_tests|game_2048_model_tests)$"
+
+  parser-fuzz:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CC: clang
+      CXX: clang++
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:allocator_may_return_null=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Configure libFuzzer targets
+        run: >-
+          cmake -S . -B build/fuzz -G Ninja
+          -DBUILD_TESTING=OFF
+          -DLVGL_BUILD_FUZZERS=ON
+          -DLVGL_BUILD_SDK_TEMPLATE=OFF
+      - name: Build parser fuzzers
+        run: >-
+          cmake --build build/fuzz --target
+          generate_fuzz_corpus fuzz_package_verifier fuzz_release_state fuzz_session_protocol
+      - name: Prepare seed corpora
+        run: |
+          mkdir -p build/corpus/package build/corpus/state build/corpus/session build/artifacts
+          cp tests/vectors/lvapp/development.lvapp.dev build/corpus/package/
+          cp tests/vectors/lvapp/signed.lvapp build/corpus/package/
+          cp profiles/y01-4.8.6.json build/corpus/session/device-profile.json
+          build/fuzz/generate_fuzz_corpus build/corpus
+      - name: Fuzz package verifier
+        run: >-
+          build/fuzz/fuzz_package_verifier build/corpus/package
+          -dict=tests/fuzz/package.dict -max_total_time=30 -max_len=1048576
+          -rss_limit_mb=2048 -timeout=10 -artifact_prefix=build/artifacts/package-
+      - name: Fuzz release state
+        run: >-
+          build/fuzz/fuzz_release_state build/corpus/state
+          -dict=tests/fuzz/release-state.dict -max_total_time=30 -max_len=1024
+          -rss_limit_mb=2048 -timeout=10 -artifact_prefix=build/artifacts/state-
+      - name: Fuzz session protocols
+        run: >-
+          build/fuzz/fuzz_session_protocol build/corpus/session
+          -dict=tests/fuzz/session.dict -max_total_time=30 -max_len=65536
+          -rss_limit_mb=2048 -timeout=10 -artifact_prefix=build/artifacts/session-
+      - name: Preserve crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: parser-fuzz-crashes
+          path: build/artifacts/
+          if-no-files-found: ignore

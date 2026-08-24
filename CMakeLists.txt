@@ -17,6 +17,22 @@ set(LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX "" CACHE STRING
 option(LVGL_PLATFORM_PRODUCTION_BUILD
     "Require an official release public key and enable production release safeguards" OFF)
 option(LVGL_BUILD_SDK_TEMPLATE "Build the SDK example application" ON)
+option(LVGL_ENABLE_SANITIZERS "Instrument host targets with AddressSanitizer and UBSan" OFF)
+option(LVGL_BUILD_FUZZERS "Build Clang libFuzzer parser targets" OFF)
+if(LVGL_BUILD_FUZZERS)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "LVGL_BUILD_FUZZERS requires Clang with libFuzzer")
+    endif()
+    set(LVGL_ENABLE_SANITIZERS ON CACHE BOOL
+        "Instrument host targets with AddressSanitizer and UBSan" FORCE)
+endif()
+if(LVGL_ENABLE_SANITIZERS)
+    if(MSVC OR NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        message(FATAL_ERROR "LVGL_ENABLE_SANITIZERS requires a Clang or GCC host build")
+    endif()
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
 if(LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX)
     string(LENGTH "${LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX}" LVGL_PLATFORM_OFFICIAL_KEY_LENGTH)
     if(NOT LVGL_PLATFORM_OFFICIAL_KEY_LENGTH EQUAL 64 OR
@@ -82,6 +98,22 @@ else()
     target_compile_options(lvgl_platform_contract PRIVATE
         -Wall -Wextra -Wpedantic -Werror
     )
+endif()
+
+if(LVGL_BUILD_FUZZERS)
+    add_executable(generate_fuzz_corpus tests/fuzz/generate_fuzz_corpus.cpp)
+    target_link_libraries(generate_fuzz_corpus PRIVATE lvgl_platform_contract)
+    target_compile_options(generate_fuzz_corpus PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_executable(fuzz_package_verifier tests/fuzz/fuzz_package_verifier.cpp)
+    add_executable(fuzz_release_state tests/fuzz/fuzz_release_state.cpp)
+    add_executable(fuzz_session_protocol tests/fuzz/fuzz_session_protocol.cpp)
+    foreach(fuzzer IN ITEMS fuzz_package_verifier fuzz_release_state fuzz_session_protocol)
+        target_link_libraries(${fuzzer} PRIVATE lvgl_platform_contract)
+        target_compile_options(${fuzzer} PRIVATE
+            -Wall -Wextra -Wpedantic -Werror -fsanitize=fuzzer
+        )
+        target_link_options(${fuzzer} PRIVATE -fsanitize=fuzzer)
+    endforeach()
 endif()
 
 if(BUILD_TESTING)
