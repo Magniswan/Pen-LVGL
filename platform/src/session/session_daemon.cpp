@@ -1,10 +1,14 @@
+#include "lvgl_platform/application_registry.h"
 #include "lvgl_platform/crypto_provider.h"
+#include "lvgl_platform/rollback_policy.h"
 #include "lvgl_platform/session_control.h"
 #include "lvgl_platform/session_profile.h"
 #include "lvgl_platform/session_status.h"
 #include "lvgl_platform/touch_protocol.h"
 #include "lvgl_platform/touch_router.h"
 #include "lvgl_platform/trust_store.h"
+#include "lvgl_platform/state_store.h"
+#include "lvgl_platform/version.h"
 
 #include <algorithm>
 #include <array>
@@ -13,11 +17,13 @@
 #include <csignal>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <limits>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include <dirent.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/file.h>
@@ -38,6 +44,8 @@ constexpr const char* kPlatformRoot = "/userdisk/apps/lvgl-platform";
 constexpr const char* kReleasePrefix =
     "/userdisk/apps/lvgl-platform/apps/top.lvgl.platform/releases/";
 constexpr const char* kTouchPath = "/run/lvgl-platform/touch.sock";
+constexpr const char* kApplicationStore = "/userdisk/apps/lvgl-apps";
+constexpr const char* kApplicationPolicyStore = "/userdisk/apps/lvgl-app-policy";
 constexpr std::size_t kMaximumPackageSize = 256U * 1024U * 1024U + 96U;
 constexpr int kReadyTimeoutMilliseconds = 10000;
 
@@ -81,6 +89,19 @@ struct VerifiedRelease {
     lvgl_platform::PackageVerification verification;
     lvgl_platform::CertifiedSessionProfile profile;
     std::uint64_t counter {0};
+};
+
+struct VerifiedApplication {
+    FileDescriptor release;
+    lvgl_platform::PackageVerification verification;
+    std::vector<std::uint8_t> package;
+};
+
+struct DirectoryCloser {
+    void operator()(DIR* directory) const noexcept
+    {
+        if(directory != nullptr) ::closedir(directory);
+    }
 };
 
 bool trusted_directory(int descriptor) noexcept
@@ -299,6 +320,85 @@ bool verify_active_release(VerifiedRelease& output, std::string& error)
     return true;
 }
 
+bool reserved_application_id(std::string_view app_id) noexcept
+{
+    return app_id == "top.lvgl.platform" || app_id == "top.lvgl.desktop" ||
+           app_id == "top.lvgl.installer";
+}
+
+bool verify_installed_application(
+    std::string_view app_id, const lvgl_platform::CertifiedSessionProfile& profile,
+    VerifiedApplication& output) noexcept
+{
+    if(!lvgl_platform::valid_session_app_id(app_id) || reserved_application_id(app_id)) return false;
+    const auto crypto = lvgl_platform::CryptoProvider::load_default();
+    const auto trust = lvgl_platform::OfficialTrustStore::compiled();
+    if(crypto == nullptr || !trust.configured()) return false;
+    const auto state = lvgl_platform::load_release_state(
+        kApplicationPolicyStore, std::string(app_id), *crypto);
+    if((state.status != lvgl_platform::StateStoreStatus::loaded &&
+        state.status != lvgl_platform::StateStoreStatus::loaded_degraded) ||
+       state.selected.state.current_release == 0) {
+        return false;
+    }
+    const auto& active = state.selected.state;
+    const std::string release_path = std::string(kApplicationStore) + "/apps/" +
+                                     std::string(app_id) + "/releases/" +
+                                     std::to_string(active.current_release);
+    output.release = open_absolute_directory(release_path);
+    if(!trusted_directory(output.release.get())) return false;
+    auto package_file = open_release_file(output.release.get(), ".package.lvapp");
+    if(!read_all(package_file.get(), output.package, kMaximumPackageSize)) return false;
+    output.verification = trust.verify(output.package.data(), output.package.size(), *crypto);
+    lvgl_platform::Sha512Digest digest {};
+    if(!output.verification.ok() || output.verification.development ||
+       !output.verification.signature_verified ||
+       !crypto->sha512(output.package.data(), output.package.size(), digest) ||
+       digest != active.current_digest || output.verification.manifest.app_id != app_id ||
+       output.verification.manifest.release_counter != active.current_release ||
+       output.verification.manifest.signing_key_id != active.signing_key_id ||
+       !installed_files_match(output.release.get(), output.package, output.verification)) {
+        return false;
+    }
+    const lvgl_platform::InstallPolicyContext policy {
+        lvgl_platform::kPlatformVersion, lvgl_platform::kSdkAbi, profile.profile_id,
+        profile.machine, {"storage.private"}};
+    return lvgl_platform::evaluate_install_policy(
+               output.verification, digest, policy).allowed();
+}
+
+std::vector<std::string> installed_application_ids() noexcept
+{
+    std::vector<std::string> ids;
+    auto applications = open_absolute_directory(std::string(kApplicationStore) + "/apps");
+    if(!applications.valid()) return ids;
+    const int duplicate = ::dup(applications.get());
+    if(duplicate < 0) return ids;
+    std::unique_ptr<DIR, DirectoryCloser> directory(::fdopendir(duplicate));
+    if(!directory) {
+        ::close(duplicate);
+        return ids;
+    }
+    errno = 0;
+    while(const auto* entry = ::readdir(directory.get())) {
+        const std::string_view name(entry->d_name);
+        if(name == "." || name == ".." || !lvgl_platform::valid_session_app_id(name) ||
+           reserved_application_id(name)) {
+            continue;
+        }
+        struct stat details {};
+        if(::fstatat(applications.get(), entry->d_name, &details, AT_SYMLINK_NOFOLLOW) == 0 &&
+           S_ISDIR(details.st_mode) && details.st_uid == 0 && (details.st_mode & 0022) == 0) {
+            ids.emplace_back(name);
+        }
+        if(ids.size() > lvgl_platform::kMaximumRegistryApplications) return {};
+    }
+    if(errno != 0) return {};
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    return ids;
+}
+
 bool write_all(int descriptor, const void* data, std::size_t size) noexcept
 {
     const auto* bytes = static_cast<const std::uint8_t*>(data);
@@ -334,6 +434,34 @@ bool atomic_status(int run_directory, const lvgl_platform::SessionStatusDocument
         return false;
     }
     return true;
+}
+
+FileDescriptor atomic_registry(
+    int run_directory, const std::vector<std::uint8_t>& contents) noexcept
+{
+    if(contents.empty() || contents.size() > lvgl_platform::kMaximumRegistrySize) return {};
+    const std::string temporary = ".application.registry-" + std::to_string(::getpid());
+    FileDescriptor output(::openat(
+        run_directory, temporary.c_str(),
+        O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0400));
+    if(!output.valid()) {
+        if(errno != EEXIST || ::unlinkat(run_directory, temporary.c_str(), 0) != 0) return {};
+        output.reset(::openat(
+            run_directory, temporary.c_str(),
+            O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0400));
+    }
+    if(!output.valid() || !write_all(output.get(), contents.data(), contents.size()) ||
+       ::fsync(output.get()) != 0 ||
+       ::renameat(run_directory, temporary.c_str(), run_directory, "application.registry") != 0 ||
+       ::fsync(run_directory) != 0) {
+        ::unlinkat(run_directory, temporary.c_str(), 0);
+        return {};
+    }
+    output.reset();
+    FileDescriptor registry(::openat(
+        run_directory, "application.registry", O_RDONLY | O_NOFOLLOW | O_CLOEXEC));
+    return trusted_regular(registry.get(), 0400, contents.size()) ? std::move(registry)
+                                                                 : FileDescriptor {};
 }
 
 bool prepare_run_root(FileDescriptor& directory, FileDescriptor& lock) noexcept
@@ -404,17 +532,20 @@ bool inherit_descriptor(int descriptor) noexcept
 }
 
 pid_t start_program(
-    int executable, int control, int touch, std::string_view program_id,
+    int executable, int control, int touch, int registry, std::string_view program_id,
     const lvgl_platform::CertifiedSessionProfile& profile, std::string_view previous_error) noexcept
 {
     const pid_t child = ::fork();
     if(child != 0) return child;
-    if(::setpgid(0, 0) != 0 || !inherit_descriptor(control) || !inherit_descriptor(touch)) _exit(126);
+    if(::setpgid(0, 0) != 0 || !inherit_descriptor(control) || !inherit_descriptor(touch) ||
+       (registry >= 0 && !inherit_descriptor(registry))) {
+        _exit(126);
+    }
     const long limit_value = ::sysconf(_SC_OPEN_MAX);
     const int limit = static_cast<int>(
         std::min<long>(limit_value > 0 ? limit_value : 1024, 65536));
     for(int fd = STDERR_FILENO + 1; fd < limit; ++fd) {
-        if(fd != executable && fd != control && fd != touch) ::close(fd);
+        if(fd != executable && fd != control && fd != touch && fd != registry) ::close(fd);
     }
     std::vector<std::string> environment {
         "PATH=/usr/sbin:/usr/bin:/sbin:/bin",
@@ -433,8 +564,13 @@ pid_t start_program(
         "LVGL_DISPLAY_HEIGHT=" + std::to_string(profile.display_height),
         "LVGL_DISPLAY_ROTATION=" + std::to_string(profile.display_rotation),
         "LVGL_PIXEL_FORMAT=" + profile.pixel_format,
+        "LVGL_PROFILE_ID=" + profile.profile_id,
+        "LVGL_MACHINE=" + profile.machine,
         "LVGL_FOREGROUND_APP_ID=" + std::string(program_id),
     };
+    if(registry >= 0) {
+        environment.push_back("LVGL_APP_REGISTRY_FD=" + std::to_string(registry));
+    }
     if(!previous_error.empty()) {
         environment.push_back("LVGL_APP_ERROR=" + std::string(previous_error));
     }
@@ -463,23 +599,74 @@ const char* built_in_program_path(std::string_view app_id) noexcept
 {
     if(app_id == "top.lvgl.desktop") return "bin/lvgl-desktop";
     if(app_id == "top.lvgl.game2048") return "bin/lvgl-2048";
+    if(app_id == "top.lvgl.installer") return "bin/lvgl-installer";
     return nullptr;
 }
 
-FileDescriptor open_verified_program(const VerifiedRelease& release, std::string_view app_id)
+FileDescriptor open_verified_program(
+    const VerifiedRelease& release, const lvgl_platform::CertifiedSessionProfile& profile,
+    std::string_view app_id)
 {
-    const char* path = built_in_program_path(app_id);
-    if(path == nullptr) return {};
-    const auto manifest_file = std::find_if(
-        release.verification.manifest.files.begin(), release.verification.manifest.files.end(),
-        [path](const auto& file) { return file.path == path; });
-    auto executable = open_release_file(release.directory.get(), path);
-    if(manifest_file == release.verification.manifest.files.end() ||
-       manifest_file->role != "executable" || manifest_file->mode != 0755 ||
-       !trusted_regular(executable.get(), 0755, manifest_file->size)) {
-        return {};
+    if(!reserved_application_id(app_id)) {
+        VerifiedApplication application;
+        if(verify_installed_application(app_id, profile, application)) {
+            const auto& manifest = application.verification.manifest;
+            const auto entry = std::find_if(
+                manifest.files.begin(), manifest.files.end(),
+                [&manifest](const auto& file) { return file.path == manifest.entry; });
+            auto executable = open_release_file(application.release.get(), manifest.entry);
+            if(entry != manifest.files.end() && entry->role == "executable" &&
+               entry->mode == 0755 && trusted_regular(executable.get(), 0755, entry->size)) {
+                return executable;
+            }
+            return {};
+        }
     }
-    return executable;
+    const char* path = built_in_program_path(app_id);
+    if(path != nullptr) {
+        const auto manifest_file = std::find_if(
+            release.verification.manifest.files.begin(), release.verification.manifest.files.end(),
+            [path](const auto& file) { return file.path == path; });
+        auto executable = open_release_file(release.directory.get(), path);
+        if(manifest_file == release.verification.manifest.files.end() ||
+           manifest_file->role != "executable" || manifest_file->mode != 0755 ||
+           !trusted_regular(executable.get(), 0755, manifest_file->size)) {
+            return {};
+        }
+        return executable;
+    }
+    return {};
+}
+
+FileDescriptor build_desktop_registry(const VerifiedRelease& release, int run_directory)
+{
+    std::vector<lvgl_platform::RegisteredApplication> applications;
+    for(const auto& app_id : installed_application_ids()) {
+        VerifiedApplication application;
+        if(!verify_installed_application(app_id, release.profile, application)) continue;
+        const auto& manifest = application.verification.manifest;
+        applications.push_back({manifest.app_id, manifest.name, manifest.version,
+                                manifest.release_counter, manifest.security_epoch,
+                                static_cast<std::uint32_t>(manifest.capabilities.size())});
+    }
+    const bool has_game = std::any_of(
+        applications.begin(), applications.end(), [](const auto& application) {
+            return application.app_id == "top.lvgl.game2048";
+        });
+    if(!has_game &&
+       open_verified_program(release, release.profile, "top.lvgl.game2048").valid()) {
+        applications.push_back({"top.lvgl.game2048", "2048", "1.0.0", release.counter,
+                                release.verification.manifest.security_epoch, 0});
+    }
+    if(open_verified_program(release, release.profile, "top.lvgl.installer").valid()) {
+        applications.push_back({"top.lvgl.installer", "应用安装器", "1.0.0", release.counter,
+                                release.verification.manifest.security_epoch, 0});
+    }
+    std::sort(applications.begin(), applications.end(), [](const auto& left, const auto& right) {
+        return left.app_id < right.app_id;
+    });
+    const auto encoded = lvgl_platform::encode_application_registry(applications);
+    return encoded.ok() ? atomic_registry(run_directory, encoded.bytes) : FileDescriptor {};
 }
 
 enum class ForegroundAction : std::uint8_t { failure, exit_session, launch, home };
@@ -493,7 +680,7 @@ struct ForegroundOutcome {
 ForegroundOutcome run_foreground(
     int executable, std::string_view program_id, std::string_view previous_error,
     const lvgl_platform::CertifiedSessionProfile& profile, int run_directory,
-    int external_touch_socket, lvgl_platform::TouchRouter& router,
+    int external_touch_socket, int registry, lvgl_platform::TouchRouter& router,
     lvgl_platform::SessionStatusDocument& status)
 {
     ForegroundOutcome outcome;
@@ -511,7 +698,8 @@ ForegroundOutcome run_foreground(
     FileDescriptor parent_touch(touch_pair[0]);
     FileDescriptor child_touch(touch_pair[1]);
     const pid_t child = start_program(
-        executable, child_control.get(), child_touch.get(), program_id, profile, previous_error);
+        executable, child_control.get(), child_touch.get(), registry, program_id, profile,
+        previous_error);
     if(child <= 1) {
         outcome.result = 77;
         return outcome;
@@ -563,8 +751,9 @@ ForegroundOutcome run_foreground(
                 outcome.action = ForegroundAction::exit_session;
                 requested = true;
             } else if(message.command == lvgl_platform::SessionControlCommand::launch_application &&
-                      ready && desktop && built_in_program_path(message.app_id) != nullptr &&
-                      message.app_id != "top.lvgl.desktop") {
+                      ready && desktop && message.app_id != "top.lvgl.desktop" &&
+                      (built_in_program_path(message.app_id) != nullptr ||
+                       !reserved_application_id(message.app_id))) {
                 outcome.action = ForegroundAction::launch;
                 outcome.app_id = std::move(message.app_id);
                 requested = true;
@@ -675,7 +864,7 @@ int main(int argc, char** argv)
             result = 74;
             break;
         }
-        auto executable = open_verified_program(release, foreground);
+        auto executable = open_verified_program(release, release.profile, foreground);
         if(!executable.valid()) {
             if(foreground != "top.lvgl.desktop") {
                 previous_error = "应用入口未包含在已验证的平台发行版中";
@@ -685,9 +874,17 @@ int main(int argc, char** argv)
             result = 75;
             break;
         }
+        FileDescriptor registry;
+        if(foreground == "top.lvgl.desktop") {
+            registry = build_desktop_registry(release, run_directory.get());
+            if(!registry.valid()) {
+                result = 85;
+                break;
+            }
+        }
         const auto outcome = run_foreground(
             executable.get(), foreground, previous_error, release.profile,
-            run_directory.get(), touch_socket.get(), router, status);
+            run_directory.get(), touch_socket.get(), registry.get(), router, status);
         previous_error.clear();
         if(g_stop != 0) {
             result = outcome.result == 0 ? 143 : outcome.result;

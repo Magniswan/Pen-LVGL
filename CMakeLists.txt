@@ -54,6 +54,8 @@ add_library(lvgl_platform_contract STATIC
     platform/src/package/package_installer.cpp
     platform/src/package/package_verifier.cpp
     platform/src/profile/device_profile.cpp
+    platform/src/services/inbox_service.cpp
+    platform/src/session/application_registry.cpp
     platform/src/session/session_control.cpp
     platform/src/session/session_profile.cpp
     platform/src/session/session_status.cpp
@@ -127,6 +129,7 @@ add_library(app_registry STATIC
     src/session/app_registry.cpp
 )
 target_include_directories(app_registry PUBLIC src)
+target_link_libraries(app_registry PUBLIC lvgl_platform_contract)
 target_compile_options(app_registry PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
 add_library(session_protocol STATIC
@@ -296,6 +299,17 @@ if(EXISTS "${DEVICE_LIBDRM_PATH}")
         -Wall -Wextra -Wpedantic -Werror -Wno-pedantic
     )
 
+    add_executable(lvgl_installer
+        apps/installer/main.cpp
+        apps/installer/installer_ui.cpp
+    )
+    set_target_properties(lvgl_installer PROPERTIES OUTPUT_NAME "lvgl-installer")
+    target_include_directories(lvgl_installer PRIVATE src apps)
+    target_link_libraries(lvgl_installer PRIVATE platform_runtime app_shell lvgl_platform_contract)
+    target_compile_options(lvgl_installer PRIVATE
+        -Wall -Wextra -Wpedantic -Werror -Wno-pedantic
+    )
+
     install(TARGETS
         drm_probe
         drm_color_test
@@ -304,6 +318,7 @@ if(EXISTS "${DEVICE_LIBDRM_PATH}")
         lvgl_poc
         focus_timer
         game_2048
+        lvgl_installer
         RUNTIME DESTINATION bin
     )
 endif()

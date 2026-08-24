@@ -89,6 +89,22 @@ FileDescriptor open_directory_at(int parent, const std::string& name) noexcept
         parent, name.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
 }
 
+FileDescriptor ensure_directory_at(int parent, const std::string& name) noexcept
+{
+    bool created = false;
+    if(::mkdirat(parent, name.c_str(), 0700) == 0) {
+        created = true;
+    } else if(errno != EEXIST) {
+        return FileDescriptor();
+    }
+    auto directory = open_directory_at(parent, name);
+    if(!directory.valid() || !trusted_directory(directory.get())) return FileDescriptor();
+    if(created && (::fsync(directory.get()) != 0 || ::fsync(parent) != 0)) {
+        return FileDescriptor();
+    }
+    return directory;
+}
+
 bool write_all(int descriptor, const std::vector<std::uint8_t>& bytes) noexcept
 {
     std::size_t written = 0;
@@ -182,20 +198,22 @@ struct StoreDirectories {
 };
 
 StoreDirectories open_store(
-    const std::string& store_root, const std::string& app_id) noexcept
+    const std::string& store_root, const std::string& app_id, bool create) noexcept
 {
     if(store_root.empty() || store_root.front() != '/') return StoreDirectories();
     StoreDirectories directories;
     directories.root = FileDescriptor(::open(
         store_root.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
     if(!directories.root.valid() || !trusted_directory(directories.root.get())) return directories;
-    directories.apps = open_directory_at(directories.root.get(), "apps");
+    directories.apps = create ? ensure_directory_at(directories.root.get(), "apps")
+                              : open_directory_at(directories.root.get(), "apps");
     if(!directories.apps.valid()) {
         directories.status = errno == ENOENT ? OpenStoreStatus::missing : OpenStoreStatus::untrusted;
         return directories;
     }
     if(!trusted_directory(directories.apps.get())) return directories;
-    directories.application = open_directory_at(directories.apps.get(), app_id);
+    directories.application = create ? ensure_directory_at(directories.apps.get(), app_id)
+                                     : open_directory_at(directories.apps.get(), app_id);
     if(!directories.application.valid()) {
         directories.status = errno == ENOENT ? OpenStoreStatus::missing : OpenStoreStatus::untrusted;
         return directories;
@@ -223,7 +241,7 @@ StateStoreResult persist_release_state(
 #if defined(_WIN32)
     return store_result(StateStoreStatus::unsupported_platform, "STATE_STORE_POSIX_REQUIRED");
 #else
-    auto directories = open_store(store_root, state.app_id);
+    auto directories = open_store(store_root, state.app_id, true);
     if(directories.status != OpenStoreStatus::opened) {
         return store_result(StateStoreStatus::root_untrusted, "STATE_STORE_PATH_UNTRUSTED");
     }
@@ -260,7 +278,7 @@ StateStoreResult load_release_state(
     (void)crypto;
     return store_result(StateStoreStatus::unsupported_platform, "STATE_STORE_POSIX_REQUIRED");
 #else
-    auto directories = open_store(store_root, app_id);
+    auto directories = open_store(store_root, app_id, false);
     if(directories.status == OpenStoreStatus::missing) {
         return store_result(StateStoreStatus::not_found, "STATE_STORE_NOT_FOUND");
     }

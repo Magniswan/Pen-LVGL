@@ -37,7 +37,18 @@ test('session daemon supervises one independent foreground application', () => {
   assert.match(source, /SessionControlCommand::launch_application/);
   assert.match(source, /SessionControlCommand::home/);
   assert.match(source, /run_foreground\(/);
-  assert.match(source, /open_verified_program\(release, foreground\)/);
+  assert.match(source, /open_verified_program\(release, release\.profile, foreground\)/);
   assert.match(source, /foreground = "top\.lvgl\.desktop"/);
   assert.match(source, /应用异常退出/);
+});
+
+test('dynamic applications are remeasured from official packages and anti-rollback state', () => {
+  assert.match(source, /OfficialTrustStore::compiled\(\)/);
+  assert.match(source, /load_release_state\(/);
+  assert.match(source, /active\.current_digest/);
+  assert.match(source, /installed_files_match\(/);
+  assert.match(source, /verify_installed_application\(/);
+  assert.match(source, /manifest\.entry/);
+  assert.match(source, /atomic_registry\(/);
+  assert.match(source, /LVGL_APP_REGISTRY_FD=/);
 });

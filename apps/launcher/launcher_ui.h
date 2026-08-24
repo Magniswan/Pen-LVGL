@@ -4,6 +4,8 @@
 
 #include <lvgl.h>
 
+#include <string_view>
+
 namespace dictpen {
 
 class LauncherUi {
@@ -17,7 +19,7 @@ private:
     static void app_event(lv_event_t* event);
     static void pager_event(lv_event_t* event);
 
-    void launch(AppId app_id);
+    void launch(std::string_view app_id, const char* display_name);
     void update_page_indicator();
 
     AppControl& control_;

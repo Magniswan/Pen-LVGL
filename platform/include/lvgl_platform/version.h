@@ -4,6 +4,8 @@
 
 namespace lvgl_platform {
 
+inline constexpr const char* kPlatformVersion = "1.0.0";
+inline constexpr const char* kSdkAbi = "1.0";
 inline constexpr std::uint16_t kPlatformAbiMajor = 1;
 inline constexpr std::uint16_t kPlatformAbiMinor = 0;
 inline constexpr std::uint16_t kProfileSchemaVersion = 1;

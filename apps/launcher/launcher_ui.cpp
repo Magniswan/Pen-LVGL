@@ -128,11 +128,10 @@ bool LauncherUi::stop_requested() const
     return stop_requested_;
 }
 
-void LauncherUi::launch(AppId app_id)
+void LauncherUi::launch(std::string_view app_id, const char* display_name)
 {
-    const AppDescriptor* app = find_app(app_id);
-    if(!app) return;
-    lv_label_set_text_fmt(transition_label_, "正在打开 %s...", app->display_name);
+    if(app_id.empty() || display_name == nullptr) return;
+    lv_label_set_text_fmt(transition_label_, "正在打开 %s...", display_name);
     lv_obj_add_state(pager_, LV_STATE_DISABLED);
     if(control_.launch(app_id)) stop_requested_ = true;
     else {
@@ -153,7 +152,7 @@ void LauncherUi::app_event(lv_event_t* event)
 {
     auto* self = static_cast<LauncherUi*>(lv_event_get_user_data(event));
     auto* app = static_cast<AppDescriptor*>(lv_obj_get_user_data(lv_event_get_target_obj(event)));
-    if(app) self->launch(app->id);
+    if(app) self->launch(app->stable_id, app->display_name);
 }
 
 void LauncherUi::pager_event(lv_event_t* event)

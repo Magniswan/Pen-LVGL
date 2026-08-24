@@ -1,5 +1,7 @@
+#include "lvgl_platform/application_registry.h"
 #include "lvgl_platform/crypto_provider.h"
 #include "lvgl_platform/device_profile.h"
+#include "lvgl_platform/inbox_service.h"
 #include "lvgl_platform/package_verifier.h"
 #include "lvgl_platform/package_installer.h"
 #include "lvgl_platform/rollback_policy.h"
@@ -226,6 +228,29 @@ void test_session_contract()
                launch_with_trailing_data.data(), launch_with_trailing_data.size(), control),
            "control protocol rejects nonzero reserved data");
 
+    const std::vector<lvgl_platform::RegisteredApplication> applications {
+        {"top.lvgl.game2048", "2048", "1.0.0", 7, 2, 1},
+        {"top.lvgl.installer", "Installer", "1.0.0", 3, 1, 0},
+    };
+    const auto registry = lvgl_platform::encode_application_registry(applications);
+    const auto decoded_registry = lvgl_platform::decode_application_registry(
+        registry.bytes.data(), registry.bytes.size());
+    expect(registry.ok() && decoded_registry.ok() &&
+               decoded_registry.applications.size() == 2 &&
+               decoded_registry.applications[0].app_id == "top.lvgl.game2048" &&
+               decoded_registry.applications[1].name == "Installer",
+           "desktop registry has one bounded canonical binary representation");
+    auto corrupt_registry = registry.bytes;
+    corrupt_registry.push_back(0);
+    expect(!lvgl_platform::decode_application_registry(
+               corrupt_registry.data(), corrupt_registry.size()).ok(),
+           "desktop registry rejects trailing data");
+    auto unordered_applications = applications;
+    std::reverse(unordered_applications.begin(), unordered_applications.end());
+    expect(lvgl_platform::encode_application_registry(unordered_applications).status ==
+               lvgl_platform::ApplicationRegistryStatus::non_canonical,
+           "desktop registry requires sorted unique application ids");
+
     constexpr std::string_view profile_text =
         "PROFILE_ID=youdao-y01-4.8.6\n"
         "MACHINE=aarch64\n"
@@ -385,6 +410,17 @@ void test_trust_and_rollback_policy()
                "C:/payload", "C:/policy", bytes.data(), bytes.size(), context, *crypto).status ==
                lvgl_platform::InstallerStatus::trust_rejected,
            "split payload and policy roots retain the same official-only trust gate");
+#if defined(_WIN32)
+    expect(lvgl_platform::prepare_application_storage() ==
+               lvgl_platform::InboxStatus::unsupported_platform,
+           "fixed application storage preparation fails explicitly on non-POSIX hosts");
+    expect(lvgl_platform::scan_official_inbox(context, *crypto).status ==
+               lvgl_platform::InboxStatus::unsupported_platform,
+           "official inbox scanning fails explicitly on non-POSIX hosts");
+    expect(lvgl_platform::install_official_inbox_candidate(
+               "invalid", context, *crypto).status == lvgl_platform::InboxStatus::invalid_token,
+           "inbox installation rejects caller tokens outside its digest-only protocol");
+#endif
     expect(lvgl_platform::evaluate_install_policy(candidate, package_digest, context).allowed(),
            "compatible first install is allowed");
 

@@ -51,6 +51,7 @@ test('native JSAPI accepts no arguments or caller-selected paths', () => {
   assert.match(bridge, /ManagerOperation::remove/);
   assert.match(service, /constexpr const char\* kPlatformRoot = "\/userdisk\/apps\/lvgl-platform"/);
   assert.match(service, /constexpr const char\* kPolicyRoot = "\/userdisk\/apps\/lvgl-platform-policy"/);
+  assert.match(service, /prepare_application_storage\(\)/);
   assert.doesNotMatch(service, /\bsystem\s*\(|\bpopen\s*\(|\bexecv|\/bin\/(?:ba)?sh|killall|pkill/);
 });
 

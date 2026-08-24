@@ -22,5 +22,6 @@ struct AppDescriptor {
 
 const AppDescriptor* app_registry(std::size_t& count);
 const AppDescriptor* find_app(AppId id);
+const AppDescriptor* find_app(const char* stable_id);
 
 }  // namespace dictpen

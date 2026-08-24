@@ -1,5 +1,6 @@
 #include "Manager.hpp"
 
+#include "lvgl_platform/inbox_service.h"
 #include "lvgl_platform/package_installer.h"
 #include "lvgl_platform/state_store.h"
 #include "lvgl_platform/trust_store.h"
@@ -382,10 +383,12 @@ ManagerSnapshot Manager::installUnlocked(ManagerOperation operation)
     auto parent = openTrustedDirectory(kPlatformParent);
     if(!parent.valid() || !cleanupRemovalTombstones(parent.get()) ||
        !ensureOwnedRoot(parent.get(), kPlatformDirectory) ||
-       !ensureOwnedRoot(parent.get(), "lvgl-platform-policy")) {
+       !ensureOwnedRoot(parent.get(), "lvgl-platform-policy") ||
+       lvgl_platform::prepare_application_storage() != lvgl_platform::InboxStatus::ready) {
         snapshot.available = false;
         snapshot.code = "MANAGER_ROOT_REJECTED";
-        snapshot.detail = "fixed platform or policy root cannot be established safely";
+        snapshot.detail =
+            "fixed platform, policy, application, or inbox roots cannot be established safely";
         return snapshot;
     }
     const lvgl_platform::InstallPolicyContext context {
