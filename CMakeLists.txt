@@ -101,6 +101,20 @@ if(BUILD_TESTING)
     add_test(NAME lvgl_platform_contract_tests
         COMMAND lvgl_platform_contract_tests
     )
+
+    add_executable(game_2048_model_tests
+        apps/game-2048/game_2048_model.cpp
+        tests/host/game_2048_model_test.cpp
+    )
+    target_include_directories(game_2048_model_tests PRIVATE apps/game-2048)
+    if(MSVC)
+        target_compile_options(game_2048_model_tests PRIVATE /W4 /WX)
+    else()
+        target_compile_options(game_2048_model_tests PRIVATE
+            -Wall -Wextra -Wpedantic -Werror
+        )
+    endif()
+    add_test(NAME game_2048_model_tests COMMAND game_2048_model_tests)
 endif()
 
 add_library(device_profile STATIC
