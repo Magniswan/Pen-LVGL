@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 project(lvgl_dictpen_poc VERSION 0.1.0 LANGUAGES C CXX)
 
 include(CTest)
+include(cmake/LvglApplication.cmake)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -15,6 +16,7 @@ set(LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX "" CACHE STRING
     "Raw 32-byte Ed25519 official release public key as 64 lowercase hex characters")
 option(LVGL_PLATFORM_PRODUCTION_BUILD
     "Require an official release public key and enable production release safeguards" OFF)
+option(LVGL_BUILD_SDK_TEMPLATE "Build the SDK example application" ON)
 if(LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX)
     string(LENGTH "${LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX}" LVGL_PLATFORM_OFFICIAL_KEY_LENGTH)
     if(NOT LVGL_PLATFORM_OFFICIAL_KEY_LENGTH EQUAL 64 OR
@@ -287,17 +289,19 @@ if(EXISTS "${DEVICE_LIBDRM_PATH}")
         -Wall -Wextra -Wpedantic -Werror -Wno-pedantic
     )
 
-    add_executable(game_2048
-        apps/game-2048/main.cpp
-        apps/game-2048/game_2048_model.cpp
-        apps/game-2048/game_2048_ui.cpp
+    lvgl_add_application(game_2048
+        APP_ID top.lvgl.game2048
+        OUTPUT_NAME lvgl-2048
+        SOURCES
+            apps/game-2048/main.cpp
+            apps/game-2048/game_2048_model.cpp
+            apps/game-2048/game_2048_ui.cpp
+        INCLUDE_DIRECTORIES apps/game-2048
     )
-    set_target_properties(game_2048 PROPERTIES OUTPUT_NAME "lvgl-2048")
-    target_include_directories(game_2048 PRIVATE src apps/game-2048)
-    target_link_libraries(game_2048 PRIVATE platform_runtime app_shell)
-    target_compile_options(game_2048 PRIVATE
-        -Wall -Wextra -Wpedantic -Werror -Wno-pedantic
-    )
+
+    if(LVGL_BUILD_SDK_TEMPLATE)
+        add_subdirectory(sdk/template-app)
+    endif()
 
     add_executable(lvgl_installer
         apps/installer/main.cpp

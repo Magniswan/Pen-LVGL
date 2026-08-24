@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "appId": "top.example.hello",
+  "name": "示例应用",
+  "version": "1.0.0",
+  "releaseCounter": 1,
+  "securityEpoch": 0,
+  "sdkAbi": "1.0",
+  "minPlatformVersion": "1.0.0",
+  "entry": "bin/lvgl-example",
+  "supportedProfiles": ["youdao-y01-4.8.6"],
+  "supportedMachines": ["aarch64"],
+  "capabilities": [],
+  "limits": {
+    "memoryMiB": 32,
+    "cpuSeconds": 3600,
+    "maxFiles": 32,
+    "dataMiB": 8
+  },
+  "onlinePolicy": { "mode": "offline-v1" }
+}

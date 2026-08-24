@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "appId": "top.lvgl.game2048",
+  "name": "2048",
+  "version": "1.0.0",
+  "releaseCounter": 1,
+  "securityEpoch": 0,
+  "sdkAbi": "1.0",
+  "minPlatformVersion": "1.0.0",
+  "entry": "bin/lvgl-2048",
+  "supportedProfiles": ["youdao-y01-4.8.6"],
+  "supportedMachines": ["aarch64"],
+  "capabilities": ["storage.private"],
+  "limits": {
+    "memoryMiB": 48,
+    "cpuSeconds": 86400,
+    "maxFiles": 32,
+    "dataMiB": 8
+  },
+  "onlinePolicy": { "mode": "offline-v1" }
+}

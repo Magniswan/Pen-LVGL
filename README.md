@@ -1,105 +1,74 @@
-# LVGL Dictionary Pen PoC
+# Youdao Dictionary Pen LVGL Platform
 
-Standalone LVGL 9.5.0 multi-app session and Falcon launcher for the probed
-Youdao Y01 dictionary-pen firmware. A Falcon mini-app provides the desktop
-entry point, then a device-side supervisor hands the DRM display and `hyn_ts`
-touch device to a native AArch64 session. The session starts a paged LVGL
-launcher, the hardware PoC, or the focus timer one at a time. Falcon is
-restored after a normal exit, application failure, or supervisor signal.
+面向有道词典笔的离线 LVGL 应用平台：两个 Falcon AMR、持久 `<hole>` 会话、原生桌面/安装器、仅官方签名的 `.lvapp` 分发链、应用 SDK，以及动画 2048 参考应用。
 
-This repository is a hardware evaluation, not a general Falcon replacement.
-The current profile is limited to `OVERHEAD_Y01_SKU_CHN_PRO`, firmware 4.8.6.
+> 当前状态：工程化预生产基线，不是已认证商品固件。仓库没有官方私钥和正式 payload；Y01 profile 仍标记为未通过 hole 真机认证，因此生产路径会失败关闭。
 
-## What Is Implemented
+## 组成
 
-- DRM/KMS connector and primary-plane discovery
-- rotated 960x266 logical canvas on the 480x960 DSI panel
-- paged LVGL launcher with the interaction PoC and focus timer applications
-- shared pull-down status panel in every in-house LVGL app
-- double-buffered page flips and dirty-region rendering
-- evdev touch discovery and coordinate conversion
-- interaction, visual, and diagnostics pages
-- runtime FPS, frame time, CPU, RSS, touch, and frame counters
-- timeout, signal, failure, and normal-exit Falcon recovery
-- uinput-driven automated interaction coverage
-- Falcon icon and native JSAPI bridge for device-only launch
-- versioned `/userdisk` payload, bounded logs, status, install, and uninstall
+| 组件 | 职责 |
+|---|---|
+| Falcon manager | 安装、修复、升级、移除官方签名平台；保留 anti-rollback state |
+| Falcon launcher | 宿主持久 `<hole>`、启动固定 sessiond、转发认证触控；从不杀 miniapp |
+| `lvgl-sessiond` | 复验平台与应用、生成桌面 registry、独立监督一个前台 child |
+| LVGL desktop | 展示 sessiond 提供的 app ID；不持有路径或启动授权 |
+| LVGL installer | 只扫描固定 inbox，只安装通过官方 key 和策略校验的包 |
+| App SDK | `RuntimeApplication`、`AppShell`、CMake helper、manifest 模板和 dev 打包脚本 |
+| 2048 | 确定性模型、撤销、手势和矿物主题动画参考应用 |
 
-## Device-Only Use
+## 安全原则
 
-The launcher is already installed on the validated device as `LVGL 应用`.
-No ADB connection is needed for normal use:
+- 唯一应用/平台信任根是编译进生产二进制的官方 Ed25519 发布公钥。
+- 私钥只允许在隔离的离线 signer 中使用；设备、AMR、仓库和普通 CI 均不持有私钥。
+- development 包带明确 dev flag 且永不可安装；改扩展名不能绕过。
+- payload 与双槽 anti-rollback policy 分根保存；卸载 payload 不清除高水位。
+- 固定目录、no-follow、owner/mode/nlink、canonical encoding、逐文件 hash 和启动前复验共同失败关闭。
+- sessiond 只向自己精确 fork 的 PID 发信号；没有 `pkill`/`killall`/Falcon termination 路径。
+- 没有 secure/verified boot 或 TEE 时，已控制 root/内核仍可 patch 用户态 verifier；详见 [威胁模型](docs/security/threat-model.md)。
 
-1. Find `LVGL 应用` in Falcon's application list and tap its icon.
-2. The short launcher page checks the installed native payload and switches to
-   LVGL.
-3. Tap the top-right exit control in LVGL and confirm to return to Falcon.
+## 快速构建
 
-The launcher is opt-in. It does not add a boot hook and does not replace
-Falcon, so restarting the pen always follows the original Falcon boot path.
+Host contracts：
 
-## Build
+```powershell
+cmake -S . -B build/host -DBUILD_TESTING=ON
+cmake --build build/host --target lvgl_platform_contract_tests game_2048_model_tests
+ctest --test-dir build/host -C Release --output-on-failure
+node --test tests/host/*.test.js launcher/test/*.test.js manager/test/*.test.js tools/lvapp/test/*.test.mjs
+```
 
-The configured toolchain is ARM GNU 11.3 for AArch64. The target sysroot must
-contain the device `libdrm.so.2` at `device-sysroot/usr/lib/`.
+Windows 运行 contract test 时需让 OpenSSL 3 `libcrypto-3-x64.dll` 位于 `PATH`；MSVC/Ninja 构建应先进入 Visual Studio Developer Shell。
 
-```sh
-cmake -S . -B build/m5 -G Ninja \
+AArch64 targets：
+
+```text
+cmake -S . -B build/platform-aarch64 -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-aarch64.cmake
-cmake --build build/m5 --target lvgl_session lvgl_launcher lvgl_poc focus_timer -j4
+cmake --build build/platform-aarch64 --target \
+  lvgl_sessiond lvgl_launcher lvgl_installer game_2048 lvgl_sdk_example
 ```
 
-The final executables are `build/m5/lvgl_session`, `build/m5/lvgl_launcher`,
-`build/m5/lvgl_poc`, and `build/m5/focus_timer`. They are dynamically linked only to
-libraries present in the profiled firmware and do not contain a development
-host RPATH.
-
-## M5 Device Run
-
-Keep the pen powered and connected through ADB. The script uploads only
-temporary `/tmp` artifacts, runs for five minutes, collects the wrapper log,
-and verifies that Falcon's guardian and miniapp processes returned.
+创建模板开发包：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run_m5.ps1
+./sdk/package-app.ps1 `
+  -Manifest sdk/template-app/app.json `
+  -Executable build/platform-aarch64/sdk/template-app/lvgl-example `
+  -Output example.lvapp.dev
 ```
 
-To collect a test that continued on the device while ADB was interrupted:
+`.lvapp.dev` 仅用于构建/格式验证。正式发布必须走 [离线发布流程](docs/release/release-process.md)。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run_m5.ps1 -CollectOnly
-```
+## 文档
 
-## Falcon Launcher Build and Install
+- [架构总览](docs/architecture/overview.md)
+- [安全威胁模型](docs/security/threat-model.md) 与 [安全政策](SECURITY.md)
+- [SDK 快速开始](docs/sdk/quickstart.md) 和 [manifest 参考](docs/sdk/manifest-reference.md)
+- [发布流程](docs/release/release-process.md)
+- [运行时排障](docs/troubleshooting/runtime.md)
+- [后续代办](docs/ROADMAP.md)
 
-Use Node.js 16.20.2 with the locked `aiot-vue-cli` 1.0.32. Build the AArch64
-native bridge before packaging the production AMR:
+## 设备边界
 
-```sh
-bash launcher/tools/build-native.sh
-cd launcher
-pnpm install --frozen-lockfile
-pnpm build:prod
-```
-
-With exactly one matching pen connected through ADB:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/install_device_app.ps1
-powershell -ExecutionPolicy Bypass -File scripts/status_device_app.ps1 -ShowLog
-```
-
-The installer refuses a different ABI, PCBA, firmware, screen profile, AppID
-owner, or an active LVGL session. It verifies hashes before activating
-`/userdisk/apps/lvgl-poc/current`.
-
-To remove only this launcher, payload, runtime state, and dedicated logs:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/uninstall_device_app.ps1
-```
-
-Do not deploy the PoC through `/etc/init.d`, `/etc/inittab`, or another boot
-hook. Review [docs/m5-evaluation.md](docs/m5-evaluation.md) and
-[docs/launcher-evaluation.md](docs/launcher-evaluation.md) before extending it.
+设备脚本只适用于已认证的 AArch64 有道词典笔。当前附加的 Nexus 4 明确不在范围内，本工程不会对它执行安装、卸载或写操作。任何真机操作前还必须补齐 serial allowlist 和设备 identity 门禁。
