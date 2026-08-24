@@ -11,6 +11,36 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_SKIP_RPATH TRUE)
 
+set(LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX "" CACHE STRING
+    "Raw 32-byte Ed25519 official release public key as 64 lowercase hex characters")
+option(LVGL_PLATFORM_PRODUCTION_BUILD
+    "Require an official release public key and enable production release safeguards" OFF)
+if(LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX)
+    string(LENGTH "${LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX}" LVGL_PLATFORM_OFFICIAL_KEY_LENGTH)
+    if(NOT LVGL_PLATFORM_OFFICIAL_KEY_LENGTH EQUAL 64 OR
+       NOT LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX MATCHES "^[0-9a-f]+$")
+        message(FATAL_ERROR
+            "LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX must be exactly 64 lowercase hex characters")
+    endif()
+endif()
+if(LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX STREQUAL
+   "0000000000000000000000000000000000000000000000000000000000000000")
+    message(FATAL_ERROR "The all-zero Ed25519 public key is forbidden")
+endif()
+if(LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX STREQUAL
+   "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
+    message(FATAL_ERROR "RFC 8032 public test keys are forbidden in the official trust slot")
+endif()
+if(LVGL_PLATFORM_PRODUCTION_BUILD AND NOT LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX)
+    message(FATAL_ERROR
+        "Production builds require LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX; private keys must never be supplied here")
+endif()
+configure_file(
+    platform/include/lvgl_platform/official_key_config.h.in
+    generated/lvgl_platform/official_key_config.h
+    @ONLY
+)
+
 set(LV_BUILD_CONF_PATH "${CMAKE_SOURCE_DIR}/lv_conf.h" CACHE PATH "" FORCE)
 set(CONFIG_LV_BUILD_DEMOS OFF CACHE BOOL "" FORCE)
 set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -20,11 +50,14 @@ add_subdirectory(third_party/lvgl EXCLUDE_FROM_ALL)
 add_library(lvgl_platform_contract STATIC
     platform/src/crypto/crypto_provider.cpp
     platform/src/ipc/touch_protocol.cpp
+    platform/src/package/rollback_policy.cpp
     platform/src/package/package_verifier.cpp
     platform/src/profile/device_profile.cpp
+    platform/src/trust/trust_store.cpp
 )
 target_include_directories(lvgl_platform_contract PUBLIC
     platform/include
+    "${CMAKE_CURRENT_BINARY_DIR}/generated"
 )
 target_include_directories(lvgl_platform_contract PRIVATE
     third_party/lvgl/src/libs/thorvg

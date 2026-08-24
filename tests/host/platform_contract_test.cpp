@@ -1,7 +1,9 @@
 #include "lvgl_platform/crypto_provider.h"
 #include "lvgl_platform/device_profile.h"
 #include "lvgl_platform/package_verifier.h"
+#include "lvgl_platform/rollback_policy.h"
 #include "lvgl_platform/touch_protocol.h"
+#include "lvgl_platform/trust_store.h"
 
 #include <algorithm>
 #include <array>
@@ -229,6 +231,114 @@ void test_package_verifier()
            "native verifier rejects malformed UTF-8 in the canonical manifest");
 }
 
+void test_trust_and_rollback_policy()
+{
+    constexpr char test_key_hex[] =
+        "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
+    const auto official_store = lvgl_platform::OfficialTrustStore::compiled();
+    expect(!official_store.configured(),
+           "developer builds do not silently acquire an official trust root");
+
+    const auto crypto = lvgl_platform::CryptoProvider::load_default();
+    expect(crypto != nullptr, "policy test crypto provider is available");
+    if(crypto == nullptr) return;
+    const auto signed_text = read_file(LVGL_PLATFORM_TEST_SIGNED_PACKAGE);
+    std::vector<std::uint8_t> bytes(signed_text.begin(), signed_text.end());
+    expect(official_store.verify(bytes.data(), bytes.size(), *crypto).status ==
+               lvgl_platform::PackageStatus::signer_untrusted,
+           "official verification API fails closed without its build-time trust root");
+
+    const lvgl_platform::TrustedPublicKey test_key {decode_hex<32>(test_key_hex), true};
+    auto candidate = lvgl_platform::verify_package(
+        bytes.data(), bytes.size(), *crypto, {test_key});
+    expect(candidate.ok(), "authenticated fixture is available to policy tests");
+    lvgl_platform::Sha512Digest package_digest {};
+    expect(crypto->sha512(bytes.data(), bytes.size(), package_digest),
+           "policy test computes a stable whole-package digest");
+
+    const lvgl_platform::InstallPolicyContext context {
+        "1.0.0", "1.0", "youdao-y01-4.8.6", "aarch64", {"storage.private"}};
+    expect(lvgl_platform::evaluate_install_policy(candidate, package_digest, context).allowed(),
+           "compatible first install is allowed");
+
+    const auto high_water = lvgl_platform::advance_high_water_mark(candidate, package_digest);
+    expect(lvgl_platform::evaluate_install_policy(
+               candidate, package_digest, context, high_water).allowed(),
+           "an identical package reinstall is idempotent");
+
+    auto different_digest = package_digest;
+    different_digest[0] ^= 0x01;
+    expect(lvgl_platform::evaluate_install_policy(
+               candidate, different_digest, context, high_water).status ==
+               lvgl_platform::InstallPolicyStatus::release_counter_collision,
+           "same release counter with different authenticated bytes is rejected");
+
+    auto newer_candidate = candidate;
+    ++newer_candidate.manifest.release_counter;
+    expect(lvgl_platform::evaluate_install_policy(
+               newer_candidate, different_digest, context, high_water).allowed(),
+           "a higher authenticated release counter is accepted");
+    const auto advanced = lvgl_platform::advance_high_water_mark(
+        newer_candidate, different_digest, high_water);
+    expect(advanced.release_counter == newer_candidate.manifest.release_counter &&
+               advanced.package_digest == different_digest,
+           "accepted update advances the high-water mark and package identity");
+    expect(lvgl_platform::advance_high_water_mark(
+               candidate, package_digest, advanced).release_counter == advanced.release_counter,
+           "high-water advancement is monotonic even if called defensively on stale input");
+
+    auto future = high_water;
+    future.release_counter = candidate.manifest.release_counter + 1;
+    expect(lvgl_platform::evaluate_install_policy(
+               candidate, package_digest, context, future).status ==
+               lvgl_platform::InstallPolicyStatus::release_counter_rollback,
+           "release counter downgrade is rejected");
+    future = high_water;
+    future.security_epoch = candidate.manifest.security_epoch + 1;
+    expect(lvgl_platform::evaluate_install_policy(
+               candidate, package_digest, context, future).status ==
+               lvgl_platform::InstallPolicyStatus::security_epoch_rollback,
+           "security epoch downgrade is rejected");
+    future = high_water;
+    future.app_id = "another.application";
+    expect(lvgl_platform::evaluate_install_policy(
+               candidate, package_digest, context, future).status ==
+               lvgl_platform::InstallPolicyStatus::application_id_mismatch,
+           "application identity takeover is rejected");
+    future = high_water;
+    future.signing_key_id = std::string(32, 'f');
+    expect(lvgl_platform::evaluate_install_policy(
+               candidate, package_digest, context, future).status ==
+               lvgl_platform::InstallPolicyStatus::signer_changed,
+           "unexpected signer transition is rejected");
+
+    auto incompatible = context;
+    incompatible.allowed_capabilities.clear();
+    expect(lvgl_platform::evaluate_install_policy(
+               candidate, package_digest, incompatible).status ==
+               lvgl_platform::InstallPolicyStatus::capability_denied,
+           "unavailable capabilities fail closed");
+    incompatible = context;
+    incompatible.profile_id = "unknown-profile";
+    expect(lvgl_platform::evaluate_install_policy(
+               candidate, package_digest, incompatible).status ==
+               lvgl_platform::InstallPolicyStatus::unsupported_profile,
+           "unsupported device profile fails closed");
+    incompatible = context;
+    incompatible.platform_version = "0.9.9";
+    expect(lvgl_platform::evaluate_install_policy(
+               candidate, package_digest, incompatible).status ==
+               lvgl_platform::InstallPolicyStatus::platform_too_old,
+           "minimum platform version is enforced");
+
+    auto unauthenticated = candidate;
+    unauthenticated.signature_verified = false;
+    expect(lvgl_platform::evaluate_install_policy(
+               unauthenticated, package_digest, context).status ==
+               lvgl_platform::InstallPolicyStatus::package_not_authenticated,
+           "policy cannot be bypassed with a fabricated manifest");
+}
+
 }  // namespace
 
 int main()
@@ -237,6 +347,7 @@ int main()
     test_profile();
     test_touch_protocol();
     test_package_verifier();
+    test_trust_and_rollback_policy();
     if(failures != 0) {
         std::cerr << failures << " test(s) failed\n";
         return EXIT_FAILURE;
