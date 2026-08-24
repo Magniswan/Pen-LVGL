@@ -1,0 +1,66 @@
+# Changelog - Platform Security
+
+> 最新变更在最上方；排查签名、安装或状态问题时优先阅读。
+
+## [2026-08-24] 安装固定收件箱中的官方应用
+
+**类型**: feat  
+**提交**: 97990ea  
+**风险**: HIGH
+
+### 变更文件
+
+| 文件 | 变更 | 说明 |
+|---|---:|---|
+| `platform/include/lvgl_platform/application_registry.h` | +43/-0 | registry 公开 schema 与 bounds |
+| `platform/include/lvgl_platform/inbox_service.h` | +63/-0 | 固定 inbox 公开 API |
+| `platform/include/lvgl_platform/version.h` | +2/-0 | 平台/SDK ABI 版本常量 |
+| `platform/src/services/inbox_service.cpp` | +329/-0 | 固定目录扫描、SHA-512 token、验签与二次校验 |
+| `platform/src/session/application_registry.cpp` | +188/-0 | canonical 应用注册表 |
+| `platform/src/session/session_daemon.cpp` | +217/-20 | 动态 release 复验与 FD 启动 |
+| `platform/src/storage/state_store.cpp` | +23/-5 | 支持拆分 payload/policy 根 |
+| `CMakeLists.txt` | +15/-0 | 注册安全服务与 installer target |
+
+### 影响范围
+
+- **API**: 新增 inbox service 与 application registry API。
+- **跨模块**: desktop、installer、manager、sessiond 同步变化。
+- **数据模型**: 新增 desktop registry 与每应用 policy state。
+- **配置**: 固定 `/userdisk/apps/lvgl-{apps,app-policy,inbox}`。
+
+### 回滚指南
+
+- 回滚：`git revert 97990ea`
+- 检查：上述 platform 文件及 `apps/installer`、`src/session/app_registry.cpp`。
+- 副作用：会移除设备端普通应用安装与动态桌面功能。
+
+## [2026-08-24] 强制官方信任与反回滚策略
+
+**类型**: feat  
+**提交**: 81fa3d2  
+**风险**: HIGH
+
+### 变更文件
+
+| 文件 | 变更 | 说明 |
+|---|---:|---|
+| `platform/src/package/rollback_policy.cpp` | +133/-0 | counter、epoch、digest 高水位策略 |
+| `platform/src/trust/trust_store.cpp` | +51/-0 | 编译期官方 Ed25519 公钥信任槽 |
+| `platform/include/lvgl_platform/rollback_policy.h` | +61/-0 | 安装策略公开类型 |
+| `platform/include/lvgl_platform/trust_store.h` | +25/-0 | 官方 trust store 接口 |
+| `platform/include/lvgl_platform/official_key_config.h.in` | +10/-0 | 生成式公钥配置头 |
+| `tests/host/platform_contract_test.cpp` | +111/-0 | trust/rollback 契约测试 |
+| `CMakeLists.txt` | +33/-0 | 生产 key 格式和 fail-closed 配置 |
+
+### 影响范围
+
+- **API**: 新增 official trust store 与 install policy。
+- **跨模块**: 所有平台/应用包安装链。
+- **数据模型**: 引入 release counter 与 security epoch 高水位。
+- **配置**: 生产构建必须提供非测试官方公钥。
+
+### 回滚指南
+
+- 回滚：`git revert 81fa3d2`
+- 检查：trust store、rollback policy、生成的官方 key header。
+- 副作用：回滚会取消生产信任根和反回滚保障，不应发布。
