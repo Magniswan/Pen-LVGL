@@ -5,6 +5,7 @@
 #include "lvgl_platform/rollback_policy.h"
 #include "lvgl_platform/release_state.h"
 #include "lvgl_platform/safe_path.h"
+#include "lvgl_platform/session_control.h"
 #include "lvgl_platform/session_status.h"
 #include "lvgl_platform/session_profile.h"
 #include "lvgl_platform/state_store.h"
@@ -200,6 +201,18 @@ void test_touch_protocol()
 
 void test_session_contract()
 {
+    const auto ready_wire = lvgl_platform::encode_session_control(
+        {lvgl_platform::SessionControlCommand::ready, 0});
+    lvgl_platform::SessionControlMessage control;
+    expect(lvgl_platform::decode_session_control(ready_wire.data(), ready_wire.size(), control) &&
+               control.command == lvgl_platform::SessionControlCommand::ready,
+           "child readiness has a fixed canonical binary protocol");
+    auto corrupt_control = ready_wire;
+    corrupt_control[6] = 0;
+    expect(!lvgl_platform::decode_session_control(
+               corrupt_control.data(), corrupt_control.size(), control),
+           "child control protocol rejects layout changes");
+
     constexpr std::string_view profile_text =
         "PROFILE_ID=youdao-y01-4.8.6\n"
         "MACHINE=aarch64\n"

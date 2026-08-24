@@ -54,6 +54,7 @@ add_library(lvgl_platform_contract STATIC
     platform/src/package/package_installer.cpp
     platform/src/package/package_verifier.cpp
     platform/src/profile/device_profile.cpp
+    platform/src/session/session_control.cpp
     platform/src/session/session_profile.cpp
     platform/src/session/session_status.cpp
     platform/src/session/touch_router.cpp
@@ -137,11 +138,14 @@ target_include_directories(app_shell PUBLIC src)
 target_link_libraries(app_shell PUBLIC app_control lvgl::lvgl)
 target_compile_options(app_shell PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
-add_executable(lvgl_session
-    src/session/session_main.cpp
-)
-target_link_libraries(lvgl_session PRIVATE session_protocol app_registry)
-target_compile_options(lvgl_session PRIVATE -Wall -Wextra -Wpedantic -Werror)
+if(NOT WIN32)
+    add_executable(lvgl_sessiond
+        platform/src/session/session_daemon.cpp
+    )
+    set_target_properties(lvgl_sessiond PROPERTIES OUTPUT_NAME "lvgl-sessiond")
+    target_link_libraries(lvgl_sessiond PRIVATE lvgl_platform_contract)
+    target_compile_options(lvgl_sessiond PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
 
 add_executable(dictpen_probe
     src/probe_main.cpp
@@ -267,7 +271,7 @@ if(EXISTS "${DEVICE_LIBDRM_PATH}")
     install(TARGETS
         drm_probe
         drm_color_test
-        lvgl_session
+        lvgl_sessiond
         lvgl_launcher
         lvgl_poc
         focus_timer
