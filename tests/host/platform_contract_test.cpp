@@ -6,6 +6,7 @@
 #include "lvgl_platform/release_state.h"
 #include "lvgl_platform/safe_path.h"
 #include "lvgl_platform/session_status.h"
+#include "lvgl_platform/session_profile.h"
 #include "lvgl_platform/state_store.h"
 #include "lvgl_platform/touch_protocol.h"
 #include "lvgl_platform/touch_router.h"
@@ -199,6 +200,36 @@ void test_touch_protocol()
 
 void test_session_contract()
 {
+    constexpr std::string_view profile_text =
+        "PROFILE_ID=youdao-y01-4.8.6\n"
+        "MACHINE=aarch64\n"
+        "LOGICAL_WIDTH=960\n"
+        "LOGICAL_HEIGHT=266\n"
+        "DRM_DEVICE=/dev/dri/card0\n"
+        "DRM_CONNECTOR_ID=71\n"
+        "DRM_CRTC_ID=64\n"
+        "DRM_OVERLAY_PLANE_ID=57\n"
+        "DRM_OVERLAY_ZPOS=2\n"
+        "DISPLAY_X=0\n"
+        "DISPLAY_Y=107\n"
+        "DISPLAY_WIDTH=480\n"
+        "DISPLAY_HEIGHT=746\n"
+        "PIXEL_FORMAT=ARGB8888\n"
+        "HOLE_SESSION_CERTIFIED=1\n";
+    const auto parsed_profile = lvgl_platform::parse_session_profile(profile_text);
+    expect(parsed_profile.ok() && parsed_profile.profile.logical_width == 960 &&
+               parsed_profile.profile.overlay_plane_id == 57,
+           "certified session profile uses a closed explicit overlay-plane schema");
+    auto profile_with_unknown_key = std::string(profile_text);
+    profile_with_unknown_key += "FALLBACK_MODESET=1\n";
+    expect(!lvgl_platform::parse_session_profile(profile_with_unknown_key).ok(),
+           "session profile rejects unknown fallback controls");
+    auto uncertified_profile = std::string(profile_text);
+    const auto certification = uncertified_profile.find("HOLE_SESSION_CERTIFIED=1");
+    uncertified_profile.replace(certification, 24, "HOLE_SESSION_CERTIFIED=0");
+    expect(!lvgl_platform::parse_session_profile(uncertified_profile).ok(),
+           "session profile fails closed without hole certification");
+
     const lvgl_platform::SessionStatusDocument ready {
         123, 987654321, lvgl_platform::SessionState::ready, 0, true, true, 960, 266};
     expect(lvgl_platform::encode_session_status(ready) ==

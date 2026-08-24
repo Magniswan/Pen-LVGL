@@ -54,6 +54,7 @@ add_library(lvgl_platform_contract STATIC
     platform/src/package/package_installer.cpp
     platform/src/package/package_verifier.cpp
     platform/src/profile/device_profile.cpp
+    platform/src/session/session_profile.cpp
     platform/src/session/session_status.cpp
     platform/src/session/touch_router.cpp
     platform/src/storage/release_state.cpp
