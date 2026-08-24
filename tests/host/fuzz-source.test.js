@@ -33,6 +33,8 @@ test('fuzz harnesses cover package, state, and external session bytes', () => {
   for (const parser of [
     'decode_session_control',
     'decode_application_registry',
+    'decode_installer_request',
+    'decode_installer_response',
     'decode_storage_request',
     'decode_storage_response',
     'decode_touch_frame',

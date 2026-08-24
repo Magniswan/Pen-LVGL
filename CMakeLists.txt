@@ -67,6 +67,7 @@ add_subdirectory(third_party/lvgl EXCLUDE_FROM_ALL)
 
 add_library(lvgl_platform_contract STATIC
     platform/src/crypto/crypto_provider.cpp
+    platform/src/ipc/installer_protocol.cpp
     platform/src/ipc/touch_protocol.cpp
     platform/src/ipc/storage_protocol.cpp
     platform/src/package/rollback_policy.cpp
@@ -213,6 +214,7 @@ endif()
 add_library(app_control STATIC
     src/runtime/app_control.cpp
     src/runtime/app_storage.cpp
+    src/runtime/installer_client.cpp
 )
 target_include_directories(app_control PUBLIC src)
 target_link_libraries(app_control PUBLIC session_protocol lvgl_platform_contract)

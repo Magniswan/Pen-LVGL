@@ -1,5 +1,7 @@
 #include "lvgl_platform/application_registry.h"
 #include "lvgl_platform/crypto_provider.h"
+#include "lvgl_platform/inbox_service.h"
+#include "lvgl_platform/installer_protocol.h"
 #include "lvgl_platform/rollback_policy.h"
 #include "lvgl_platform/session_control.h"
 #include "lvgl_platform/session_profile.h"
@@ -34,6 +36,7 @@
 #include <sys/random.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/un.h>
 #include <sys/utsname.h>
@@ -835,7 +838,7 @@ FileDescriptor open_drm_device(
 }
 
 pid_t start_program(
-    int executable, int control, int touch, int registry, int storage, int drm,
+    int executable, int control, int touch, int registry, int storage, int installer, int drm,
     std::string_view program_id, const ProgramPolicy& policy,
     const lvgl_platform::CertifiedSessionProfile& profile, std::string_view previous_error) noexcept
 {
@@ -843,7 +846,8 @@ pid_t start_program(
     if(child != 0) return child;
     if(::setpgid(0, 0) != 0 || !inherit_descriptor(control) || !inherit_descriptor(touch) ||
        (registry >= 0 && !inherit_descriptor(registry)) ||
-       (storage >= 0 && !inherit_descriptor(storage)) || !inherit_descriptor(drm)) {
+       (storage >= 0 && !inherit_descriptor(storage)) ||
+       (installer >= 0 && !inherit_descriptor(installer)) || !inherit_descriptor(drm)) {
         _exit(126);
     }
     const long limit_value = ::sysconf(_SC_OPEN_MAX);
@@ -851,7 +855,7 @@ pid_t start_program(
         std::min<long>(limit_value > 0 ? limit_value : 1024, 65536));
     for(int fd = STDERR_FILENO + 1; fd < limit; ++fd) {
         if(fd != executable && fd != control && fd != touch && fd != registry && fd != storage &&
-           fd != drm) {
+           fd != installer && fd != drm) {
             ::close(fd);
         }
     }
@@ -885,6 +889,9 @@ pid_t start_program(
     }
     if(storage >= 0) {
         environment.push_back("LVGL_APP_STORAGE_FD=" + std::to_string(storage));
+    }
+    if(installer >= 0) {
+        environment.push_back("LVGL_INSTALLER_FD=" + std::to_string(installer));
     }
     if(!previous_error.empty()) {
         environment.push_back("LVGL_APP_ERROR=" + std::string(previous_error));
@@ -999,6 +1006,84 @@ FileDescriptor build_desktop_registry(const VerifiedRelease& release, int run_di
     return encoded.ok() ? atomic_registry(run_directory, encoded.bytes) : FileDescriptor {};
 }
 
+lvgl_platform::InstallerProtocolStatus installer_status(
+    lvgl_platform::InboxStatus status) noexcept
+{
+    using Inbox = lvgl_platform::InboxStatus;
+    using Protocol = lvgl_platform::InstallerProtocolStatus;
+    switch(status) {
+        case Inbox::ready: return Protocol::ready;
+        case Inbox::empty: return Protocol::empty;
+        case Inbox::invalid_token: return Protocol::invalid_request;
+        case Inbox::candidate_not_found: return Protocol::not_found;
+        case Inbox::candidate_rejected: return Protocol::rejected;
+        case Inbox::root_untrusted: return Protocol::unavailable;
+        case Inbox::io_error: return Protocol::io_error;
+        case Inbox::unsupported_platform: return Protocol::unavailable;
+    }
+    return Protocol::io_error;
+}
+
+lvgl_platform::InstallPolicyContext installer_policy(
+    const lvgl_platform::CertifiedSessionProfile& profile)
+{
+    return {lvgl_platform::kPlatformVersion, lvgl_platform::kSdkAbi,
+            profile.profile_id, profile.machine, {"storage.private"}};
+}
+
+bool handle_installer_request(
+    int socket, const lvgl_platform::CertifiedSessionProfile& profile) noexcept
+{
+    std::array<std::uint8_t, lvgl_platform::kInstallerRequestSize> request_bytes {};
+    const auto received = ::recv(
+        socket, request_bytes.data(), request_bytes.size(), MSG_DONTWAIT | MSG_TRUNC);
+    lvgl_platform::InstallerRequest request;
+    if(received != static_cast<ssize_t>(request_bytes.size()) ||
+       !lvgl_platform::decode_installer_request(
+           request_bytes.data(), request_bytes.size(), request)) {
+        return false;
+    }
+    const auto crypto = lvgl_platform::CryptoProvider::load_default();
+    if(crypto == nullptr) return false;
+    lvgl_platform::InstallerResponse response;
+    response.command = request.command;
+    response.request_id = request.request_id;
+    response.status = lvgl_platform::InstallerProtocolStatus::io_error;
+    response.detail = "INSTALLER_BROKER_FAILED";
+    const auto policy = installer_policy(profile);
+    const auto prepared = lvgl_platform::prepare_application_storage();
+    if(prepared != lvgl_platform::InboxStatus::ready) {
+        response.status = installer_status(prepared);
+        response.detail = "INSTALLER_STORAGE_UNAVAILABLE";
+    } else if(request.command == lvgl_platform::InstallerCommand::install) {
+        const auto result = lvgl_platform::install_official_inbox_candidate(
+            request.token, policy, *crypto);
+        response.status = installer_status(result.status);
+        response.detail = result.detail;
+    } else {
+        const auto scan = lvgl_platform::scan_official_inbox(policy, *crypto);
+        response.status = installer_status(scan.status);
+        response.detail = scan.detail;
+        if(request.command == lvgl_platform::InstallerCommand::scan) {
+            if(scan.status == lvgl_platform::InboxStatus::ready) {
+                response.count = static_cast<std::uint32_t>(scan.candidates.size());
+            }
+        } else if(scan.status == lvgl_platform::InboxStatus::ready &&
+                  request.index < scan.candidates.size()) {
+            response.status = lvgl_platform::InstallerProtocolStatus::ready;
+            response.detail = scan.candidates[request.index].detail;
+            response.candidate = scan.candidates[request.index];
+        } else {
+            response.status = lvgl_platform::InstallerProtocolStatus::not_found;
+            response.detail = "INBOX_CANDIDATE_NOT_FOUND";
+        }
+    }
+    const auto encoded = lvgl_platform::encode_installer_response(response);
+    return encoded[0] != 0 &&
+           ::send(socket, encoded.data(), encoded.size(), MSG_NOSIGNAL) ==
+               static_cast<ssize_t>(encoded.size());
+}
+
 enum class ForegroundAction : std::uint8_t { failure, exit_session, launch, home };
 
 struct ForegroundOutcome {
@@ -1018,16 +1103,22 @@ ForegroundOutcome run_foreground(
     int control_pair[2] {-1, -1};
     int touch_pair[2] {-1, -1};
     int storage_pair[2] {-1, -1};
+    int installer_pair[2] {-1, -1};
+    const bool installer_program = program_id == "top.lvgl.installer";
     if(::socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, control_pair) != 0 ||
        ::socketpair(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0, touch_pair) != 0 ||
        (storage_directory >= 0 &&
-        ::socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, storage_pair) != 0)) {
+        ::socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, storage_pair) != 0) ||
+       (installer_program &&
+        ::socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, installer_pair) != 0)) {
         if(control_pair[0] >= 0) ::close(control_pair[0]);
         if(control_pair[1] >= 0) ::close(control_pair[1]);
         if(touch_pair[0] >= 0) ::close(touch_pair[0]);
         if(touch_pair[1] >= 0) ::close(touch_pair[1]);
         if(storage_pair[0] >= 0) ::close(storage_pair[0]);
         if(storage_pair[1] >= 0) ::close(storage_pair[1]);
+        if(installer_pair[0] >= 0) ::close(installer_pair[0]);
+        if(installer_pair[1] >= 0) ::close(installer_pair[1]);
         outcome.result = 76;
         return outcome;
     }
@@ -1037,6 +1128,8 @@ ForegroundOutcome run_foreground(
     FileDescriptor child_touch(touch_pair[1]);
     FileDescriptor parent_storage(storage_pair[0]);
     FileDescriptor child_storage(storage_pair[1]);
+    FileDescriptor parent_installer(installer_pair[0]);
+    FileDescriptor child_installer(installer_pair[1]);
     auto drm = open_drm_device(profile);
     if(!drm.valid()) {
         outcome.result = 87;
@@ -1060,9 +1153,34 @@ ForegroundOutcome run_foreground(
             return outcome;
         }
     }
+    if(parent_installer.valid()) {
+        const int buffer_size = static_cast<int>(lvgl_platform::kInstallerResponseSize * 4U);
+        const timeval timeout {30, 0};
+        if(::setsockopt(
+               parent_installer.get(), SOL_SOCKET, SO_RCVBUF, &buffer_size,
+               sizeof(buffer_size)) != 0 ||
+           ::setsockopt(
+               parent_installer.get(), SOL_SOCKET, SO_SNDBUF, &buffer_size,
+               sizeof(buffer_size)) != 0 ||
+           ::setsockopt(
+               child_installer.get(), SOL_SOCKET, SO_RCVBUF, &buffer_size,
+               sizeof(buffer_size)) != 0 ||
+           ::setsockopt(
+               child_installer.get(), SOL_SOCKET, SO_SNDBUF, &buffer_size,
+               sizeof(buffer_size)) != 0 ||
+           ::setsockopt(
+               child_installer.get(), SOL_SOCKET, SO_RCVTIMEO, &timeout,
+               sizeof(timeout)) != 0 ||
+           ::setsockopt(
+               child_installer.get(), SOL_SOCKET, SO_SNDTIMEO, &timeout,
+               sizeof(timeout)) != 0) {
+            outcome.result = 90;
+            return outcome;
+        }
+    }
     const pid_t child = start_program(
         executable, child_control.get(), child_touch.get(), registry, child_storage.get(),
-        drm.get(), program_id, policy, profile, previous_error);
+        child_installer.get(), drm.get(), program_id, policy, profile, previous_error);
     if(child <= 1) {
         outcome.result = 77;
         return outcome;
@@ -1071,6 +1189,7 @@ ForegroundOutcome run_foreground(
     child_control.reset();
     child_touch.reset();
     child_storage.reset();
+    child_installer.reset();
 
     const auto ready_deadline = monotonic_microseconds() +
                                 static_cast<std::uint64_t>(kReadyTimeoutMilliseconds) * 1000ULL;
@@ -1086,8 +1205,9 @@ ForegroundOutcome run_foreground(
             {parent_control.get(), POLLIN | POLLHUP, 0},
             {external_touch_socket, static_cast<short>(ready ? POLLIN : 0), 0},
             {parent_storage.get(), static_cast<short>(parent_storage.valid() ? POLLIN : 0), 0},
+            {parent_installer.get(), static_cast<short>(parent_installer.valid() ? POLLIN : 0), 0},
         };
-        const int polled = ::poll(descriptors, 3, 100);
+        const int polled = ::poll(descriptors, 4, 100);
         if(polled < 0 && errno != EINTR) {
             outcome.result = 78;
             break;
@@ -1152,6 +1272,12 @@ ForegroundOutcome run_foreground(
            !handle_storage_request(
                parent_storage.get(), storage_directory, policy.limits)) {
             outcome.result = 89;
+            break;
+        }
+        if(polled > 0 && parent_installer.valid() &&
+           (descriptors[3].revents & POLLIN) != 0 &&
+           !handle_installer_request(parent_installer.get(), profile)) {
+            outcome.result = 91;
             break;
         }
         if(!ready && monotonic_microseconds() >= ready_deadline) {

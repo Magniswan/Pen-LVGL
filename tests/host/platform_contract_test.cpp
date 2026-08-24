@@ -2,6 +2,7 @@
 #include "lvgl_platform/crypto_provider.h"
 #include "lvgl_platform/device_profile.h"
 #include "lvgl_platform/inbox_service.h"
+#include "lvgl_platform/installer_protocol.h"
 #include "lvgl_platform/package_verifier.h"
 #include "lvgl_platform/package_installer.h"
 #include "lvgl_platform/rollback_policy.h"
@@ -366,6 +367,62 @@ void test_session_contract()
            "session touch router accepts the matching contact end");
 }
 
+void test_installer_protocol()
+{
+    using namespace lvgl_platform;
+    InstallerRequest scan {InstallerCommand::scan, 7, 0, {}};
+    const auto scan_wire = encode_installer_request(scan);
+    InstallerRequest decoded_scan;
+    expect(decode_installer_request(scan_wire.data(), scan_wire.size(), decoded_scan) &&
+               decoded_scan.command == InstallerCommand::scan && decoded_scan.request_id == 7,
+           "installer scan request survives a canonical round trip");
+
+    InstallerRequest install {InstallerCommand::install, 8, 0, std::string(128, 'a')};
+    const auto install_wire = encode_installer_request(install);
+    InstallerRequest decoded_install;
+    expect(decode_installer_request(
+               install_wire.data(), install_wire.size(), decoded_install) &&
+               decoded_install.token == install.token,
+           "installer accepts only an opaque digest token for mutation");
+    auto smuggled = scan_wire;
+    smuggled.back() = 1;
+    expect(!decode_installer_request(smuggled.data(), smuggled.size(), decoded_scan),
+           "installer request rejects nonzero unused bytes");
+
+    InstallerResponse count;
+    count.command = InstallerCommand::scan;
+    count.status = InstallerProtocolStatus::ready;
+    count.request_id = 7;
+    count.count = 2;
+    count.detail = "INBOX_READY";
+    const auto count_wire = encode_installer_response(count);
+    InstallerResponse decoded_count;
+    expect(decode_installer_response(count_wire.data(), count_wire.size(), decoded_count) &&
+               decoded_count.count == 2 && decoded_count.detail == "INBOX_READY",
+           "installer scan response carries only a bounded candidate count");
+
+    InstallerResponse candidate;
+    candidate.command = InstallerCommand::candidate;
+    candidate.status = InstallerProtocolStatus::ready;
+    candidate.request_id = 9;
+    candidate.detail = "POLICY_ALLOWED";
+    candidate.candidate = {
+        std::string(128, 'b'), "top.lvgl.example", "Example", "1.2.3",
+        "POLICY_ALLOWED", 4, 2, 4096, true};
+    const auto candidate_wire = encode_installer_response(candidate);
+    InstallerResponse decoded_candidate;
+    expect(decode_installer_response(
+               candidate_wire.data(), candidate_wire.size(), decoded_candidate) &&
+               decoded_candidate.candidate.app_id == "top.lvgl.example" &&
+               decoded_candidate.candidate.installable &&
+               decoded_candidate.candidate.release_counter == 4,
+           "installer candidate metadata survives a canonical round trip");
+    auto corrupt = candidate_wire;
+    corrupt.back() = 1;
+    expect(!decode_installer_response(corrupt.data(), corrupt.size(), decoded_candidate),
+           "installer response rejects nonzero padding and payload smuggling");
+}
+
 void test_package_verifier()
 {
     const auto crypto = lvgl_platform::CryptoProvider::load_default();
@@ -671,6 +728,7 @@ int main()
     test_touch_protocol();
     test_storage_protocol();
     test_session_contract();
+    test_installer_protocol();
     test_package_verifier();
     test_trust_and_rollback_policy();
     test_release_state();

@@ -1,19 +1,11 @@
 #include "installer/installer_ui.h"
 
-#include "lvgl_platform/version.h"
 #include "shell/app_theme.h"
 
 #include <algorithm>
-#include <cstdlib>
 
 namespace dictpen {
 namespace {
-
-const char* environment(const char* name, const char* fallback)
-{
-    const char* value = std::getenv(name);
-    return value != nullptr && *value != '\0' ? value : fallback;
-}
 
 void card(lv_obj_t* object)
 {
@@ -79,13 +71,9 @@ void InstallerUi::create()
     action_label_ = lv_obj_get_child(action_, 0);
     lv_obj_add_event_cb(action_, action_event, LV_EVENT_CLICKED, this);
 
-    crypto_ = lvgl_platform::CryptoProvider::load_default();
-    if(crypto_ == nullptr) {
+    if(!installer_.available()) {
         scan_.status = lvgl_platform::InboxStatus::io_error;
-        scan_.detail = "CRYPTO_UNAVAILABLE";
-    } else if(lvgl_platform::prepare_application_storage() != lvgl_platform::InboxStatus::ready) {
-        scan_.status = lvgl_platform::InboxStatus::root_untrusted;
-        scan_.detail = "INBOX_ROOT_UNTRUSTED";
+        scan_.detail = "INSTALLER_BROKER_UNAVAILABLE";
     } else {
         scan();
     }
@@ -102,16 +90,9 @@ void InstallerUi::destroy()
 
 bool InstallerUi::stop_requested() const noexcept { return stop_requested_; }
 
-lvgl_platform::InstallPolicyContext InstallerUi::policy() const
-{
-    return {lvgl_platform::kPlatformVersion, lvgl_platform::kSdkAbi,
-            environment("LVGL_PROFILE_ID", "invalid-profile"),
-            environment("LVGL_MACHINE", "invalid-machine"), {"storage.private"}};
-}
-
 void InstallerUi::scan()
 {
-    scan_ = lvgl_platform::scan_official_inbox(policy(), *crypto_);
+    scan_ = installer_.scan();
     selected_ = std::min(selected_, scan_.candidates.empty() ? std::size_t {0}
                                                              : scan_.candidates.size() - 1);
 }
@@ -173,8 +154,8 @@ void InstallerUi::install_selected()
 {
     install_timer_ = nullptr;
     const auto token = scan_.candidates[selected_].token;
-    const auto result = lvgl_platform::install_official_inbox_candidate(token, policy(), *crypto_);
-    result_success_ = result.ok();
+    const auto result = installer_.install(token);
+    result_success_ = result.success;
     result_text_ = result.detail;
     busy_ = false;
     render();

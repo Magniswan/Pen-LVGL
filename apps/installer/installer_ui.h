@@ -2,10 +2,10 @@
 
 #include "lvgl_platform/inbox_service.h"
 #include "runtime/app_control.h"
+#include "runtime/installer_client.h"
 
 #include <lvgl.h>
 
-#include <memory>
 #include <string>
 
 namespace dictpen {
@@ -27,10 +27,8 @@ private:
     void render();
     void begin_install();
     void install_selected();
-    lvgl_platform::InstallPolicyContext policy() const;
-
     AppControl& control_;
-    std::unique_ptr<lvgl_platform::CryptoProvider> crypto_;
+    InstallerClient installer_;
     lvgl_platform::InboxScanResult scan_;
     std::size_t selected_ {0};
     lv_obj_t* identity_ {nullptr};
