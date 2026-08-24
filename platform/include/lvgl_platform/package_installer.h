@@ -49,4 +49,11 @@ InstallerResult install_official_package(
     std::size_t package_size, const InstallPolicyContext& policy_context,
     const CryptoProvider& crypto);
 
+// Variant for removable payloads. Anti-rollback state remains in a separate,
+// trusted root when the payload store is intentionally removed.
+InstallerResult install_official_package_with_state_root(
+    const std::string& payload_store_root, const std::string& state_store_root,
+    const std::uint8_t* package_bytes, std::size_t package_size,
+    const InstallPolicyContext& policy_context, const CryptoProvider& crypto);
+
 }  // namespace lvgl_platform

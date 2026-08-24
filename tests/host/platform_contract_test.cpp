@@ -272,6 +272,10 @@ void test_trust_and_rollback_policy()
                "C:/unused", bytes.data(), bytes.size(), context, *crypto).status ==
                lvgl_platform::InstallerStatus::trust_rejected,
            "production installer cannot run without its compiled official key");
+    expect(lvgl_platform::install_official_package_with_state_root(
+               "C:/payload", "C:/policy", bytes.data(), bytes.size(), context, *crypto).status ==
+               lvgl_platform::InstallerStatus::trust_rejected,
+           "split payload and policy roots retain the same official-only trust gate");
     expect(lvgl_platform::evaluate_install_policy(candidate, package_digest, context).allowed(),
            "compatible first install is allowed");
 

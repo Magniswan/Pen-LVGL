@@ -17,8 +17,9 @@ ApplicationHighWaterMark high_water_from(const ApplicationReleaseState& state)
 
 }  // namespace
 
-InstallerResult install_official_package(
-    const std::string& store_root, const std::uint8_t* package_bytes,
+InstallerResult install_official_package_with_state_root(
+    const std::string& payload_store_root, const std::string& state_store_root,
+    const std::uint8_t* package_bytes,
     std::size_t package_size, const InstallPolicyContext& policy_context,
     const CryptoProvider& crypto)
 {
@@ -40,7 +41,7 @@ InstallerResult install_official_package(
 
     std::optional<ApplicationReleaseState> current;
     result.state_store = load_release_state(
-        store_root, result.verification.manifest.app_id, crypto);
+        state_store_root, result.verification.manifest.app_id, crypto);
     if(result.state_store.status == StateStoreStatus::loaded ||
        result.state_store.status == StateStoreStatus::loaded_degraded) {
         current = result.state_store.selected.state;
@@ -65,7 +66,7 @@ InstallerResult install_official_package(
     }
 
     result.storage = stage_verified_release(
-        store_root, package_bytes, package_size, result.verification, package_digest);
+        payload_store_root, package_bytes, package_size, result.verification, package_digest);
     if(!result.storage.ok()) {
         result.status = InstallerStatus::storage_failed;
         result.detail = result.storage.detail;
@@ -78,7 +79,7 @@ InstallerResult install_official_package(
         return result;
     }
     result.active_state = *next;
-    result.state_store = persist_release_state(store_root, result.active_state, crypto);
+    result.state_store = persist_release_state(state_store_root, result.active_state, crypto);
     if(!result.state_store.ok()) {
         result.status = InstallerStatus::state_commit_failed;
         result.detail = result.state_store.detail;
@@ -96,6 +97,15 @@ InstallerResult install_official_package(
         result.detail = "INSTALLER_INSTALLED";
     }
     return result;
+}
+
+InstallerResult install_official_package(
+    const std::string& store_root, const std::uint8_t* package_bytes,
+    std::size_t package_size, const InstallPolicyContext& policy_context,
+    const CryptoProvider& crypto)
+{
+    return install_official_package_with_state_root(
+        store_root, store_root, package_bytes, package_size, policy_context, crypto);
 }
 
 }  // namespace lvgl_platform
