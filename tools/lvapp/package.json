@@ -1,0 +1,11 @@
+{
+  "name": "@lvgl-platform/lvapp-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "18.20.8" },
+  "scripts": {
+    "test": "node --test",
+    "lvapp": "node cli.mjs"
+  }
+}
