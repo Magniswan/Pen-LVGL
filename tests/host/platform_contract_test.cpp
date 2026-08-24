@@ -5,8 +5,10 @@
 #include "lvgl_platform/rollback_policy.h"
 #include "lvgl_platform/release_state.h"
 #include "lvgl_platform/safe_path.h"
+#include "lvgl_platform/session_status.h"
 #include "lvgl_platform/state_store.h"
 #include "lvgl_platform/touch_protocol.h"
+#include "lvgl_platform/touch_router.h"
 #include "lvgl_platform/trust_store.h"
 
 #include <algorithm>
@@ -193,6 +195,35 @@ void test_touch_protocol()
     expect(contacts.accept(lifecycle).ok(), "active contact can end");
     expect(contacts.accept(lifecycle) == lvgl_platform::errors::input_contact_invalid,
            "ended contact cannot end twice");
+}
+
+void test_session_contract()
+{
+    const lvgl_platform::SessionStatusDocument ready {
+        123, 987654321, lvgl_platform::SessionState::ready, 0, true, true, 960, 266};
+    expect(lvgl_platform::encode_session_status(ready) ==
+               "SESSION_PID=123\nSESSION_NONCE=987654321\nSTATE=ready\nRESULT=0\n"
+               "HOLE_READY=1\nINPUT_READY=1\nLOGICAL_WIDTH=960\nLOGICAL_HEIGHT=266\n",
+           "session status has one canonical launcher-facing encoding");
+    auto invalid = ready;
+    invalid.state = lvgl_platform::SessionState::starting;
+    expect(lvgl_platform::encode_session_status(invalid).empty(),
+           "non-ready session cannot advertise hole or input readiness");
+
+    lvgl_platform::TouchFrame frame {
+        ready.session_nonce, 1, 5000000, lvgl_platform::TouchPhase::start, 0, 30, 40, 0};
+    auto wire = lvgl_platform::encode_touch_frame(frame);
+    lvgl_platform::TouchRouter router(ready.session_nonce, 960, 266);
+    expect(router.route(wire.data(), wire.size(), frame.monotonic_us + 1).ok(),
+           "session touch router accepts a fresh first contact");
+    expect(router.route(wire.data(), wire.size(), frame.monotonic_us + 1).error ==
+               lvgl_platform::errors::input_sequence_replayed,
+           "session touch router rejects replayed wire frames");
+    ++frame.sequence;
+    frame.phase = lvgl_platform::TouchPhase::end;
+    wire = lvgl_platform::encode_touch_frame(frame);
+    expect(router.route(wire.data(), wire.size(), frame.monotonic_us + 1).ok(),
+           "session touch router accepts the matching contact end");
 }
 
 void test_package_verifier()
@@ -482,6 +513,7 @@ int main()
     test_crypto_provider();
     test_profile();
     test_touch_protocol();
+    test_session_contract();
     test_package_verifier();
     test_trust_and_rollback_policy();
     test_release_state();
