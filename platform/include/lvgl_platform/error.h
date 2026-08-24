@@ -41,6 +41,8 @@ inline constexpr ErrorCode profile_ambiguous {ErrorDomain::profile, 4};
 inline constexpr ErrorCode input_frame_invalid {ErrorDomain::input, 1};
 inline constexpr ErrorCode input_session_mismatch {ErrorDomain::input, 2};
 inline constexpr ErrorCode input_sequence_replayed {ErrorDomain::input, 3};
+inline constexpr ErrorCode input_timestamp_stale {ErrorDomain::input, 4};
+inline constexpr ErrorCode input_contact_invalid {ErrorDomain::input, 5};
 }  // namespace errors
 
 }  // namespace lvgl_platform

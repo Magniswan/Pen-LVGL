@@ -40,6 +40,10 @@ struct TouchDecodeResult {
 using TouchWireFrame = std::array<std::uint8_t, kTouchFrameWireSize>;
 
 bool valid_touch_frame(const TouchFrame& frame, std::int32_t width, std::int32_t height) noexcept;
+bool touch_timestamp_fresh(
+    const TouchFrame& frame, std::uint64_t now_monotonic_us,
+    std::uint64_t maximum_age_us = 2000000,
+    std::uint64_t maximum_future_us = 100000) noexcept;
 TouchWireFrame encode_touch_frame(const TouchFrame& frame) noexcept;
 TouchDecodeResult decode_touch_frame(
     const std::uint8_t* bytes, std::size_t size, std::int32_t width,
@@ -53,6 +57,15 @@ public:
 private:
     std::uint64_t session_nonce_ {0};
     std::uint64_t last_sequence_ {0};
+};
+
+class TouchContactGuard {
+public:
+    ErrorCode accept(const TouchFrame& frame) noexcept;
+    void reset() noexcept;
+
+private:
+    std::uint32_t active_contacts_ {0};
 };
 
 }  // namespace lvgl_platform

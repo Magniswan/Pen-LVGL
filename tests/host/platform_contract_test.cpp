@@ -173,6 +173,26 @@ void test_touch_protocol()
     ++wrong_session.sequence;
     expect(guard.accept(wrong_session) == lvgl_platform::errors::input_session_mismatch,
            "different session nonce is rejected");
+
+    expect(lvgl_platform::touch_timestamp_fresh(frame, frame.monotonic_us + 1000),
+           "recent monotonic touch timestamps are accepted");
+    expect(!lvgl_platform::touch_timestamp_fresh(frame, frame.monotonic_us + 3000000),
+           "stale touch timestamps are rejected");
+    expect(!lvgl_platform::touch_timestamp_fresh(frame, frame.monotonic_us - 200000),
+           "touch timestamps too far in the future are rejected");
+
+    lvgl_platform::TouchContactGuard contacts;
+    auto lifecycle = frame;
+    lifecycle.phase = lvgl_platform::TouchPhase::start;
+    expect(contacts.accept(lifecycle).ok(), "new contact starts once");
+    expect(contacts.accept(lifecycle) == lvgl_platform::errors::input_contact_invalid,
+           "duplicate contact start is rejected");
+    lifecycle.phase = lvgl_platform::TouchPhase::move;
+    expect(contacts.accept(lifecycle).ok(), "active contact can move");
+    lifecycle.phase = lvgl_platform::TouchPhase::end;
+    expect(contacts.accept(lifecycle).ok(), "active contact can end");
+    expect(contacts.accept(lifecycle) == lvgl_platform::errors::input_contact_invalid,
+           "ended contact cannot end twice");
 }
 
 void test_package_verifier()

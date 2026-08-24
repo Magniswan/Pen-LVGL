@@ -51,6 +51,17 @@ bool valid_touch_frame(
            frame.flags == 0;
 }
 
+bool touch_timestamp_fresh(
+    const TouchFrame& frame, std::uint64_t now_monotonic_us,
+    std::uint64_t maximum_age_us, std::uint64_t maximum_future_us) noexcept
+{
+    if(frame.monotonic_us == 0 || now_monotonic_us == 0) return false;
+    if(frame.monotonic_us > now_monotonic_us) {
+        return frame.monotonic_us - now_monotonic_us <= maximum_future_us;
+    }
+    return now_monotonic_us - frame.monotonic_us <= maximum_age_us;
+}
+
 TouchWireFrame encode_touch_frame(const TouchFrame& frame) noexcept
 {
     TouchWireFrame bytes {};
@@ -110,6 +121,32 @@ void TouchSequenceGuard::reset(std::uint64_t session_nonce) noexcept
 {
     session_nonce_ = session_nonce;
     last_sequence_ = 0;
+}
+
+ErrorCode TouchContactGuard::accept(const TouchFrame& frame) noexcept
+{
+    if(frame.contact_id > kMaxTouchContactId) return errors::input_contact_invalid;
+    const auto mask = static_cast<std::uint32_t>(1U << frame.contact_id);
+    const bool active = (active_contacts_ & mask) != 0;
+    switch(frame.phase) {
+        case TouchPhase::start:
+            if(active) return errors::input_contact_invalid;
+            active_contacts_ |= mask;
+            return errors::ok;
+        case TouchPhase::move:
+            return active ? errors::ok : errors::input_contact_invalid;
+        case TouchPhase::end:
+        case TouchPhase::cancel:
+            if(!active) return errors::input_contact_invalid;
+            active_contacts_ &= ~mask;
+            return errors::ok;
+    }
+    return errors::input_contact_invalid;
+}
+
+void TouchContactGuard::reset() noexcept
+{
+    active_contacts_ = 0;
 }
 
 }  // namespace lvgl_platform
