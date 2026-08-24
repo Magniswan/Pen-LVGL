@@ -44,7 +44,8 @@ foreground app
 - 只执行已打开且重新验证的 entry FD；不接受路径或 shell。
 - 每次切换创建新的 control/touch socketpair；session nonce 与外部触摸序列保持连续。
 - 只向精确 fork 的 child PID 发送 SIGTERM/SIGKILL，从不扫描或终止 Falcon/miniapp。
-- 应用崩溃返回桌面并显示一次安全错误；桌面连续失败三次退出到 Falcon。
+- 动态应用启动失败/崩溃时，仅在 previous release 重新验签、digest/文件/profile/policy 全部通过后提交双槽 rollback；失败 current 被 quarantine 且 high-water 保留，然后回桌面。无可信 previous 时 policy 不变。
+- 桌面连续失败三次退出到 Falcon；sessiond 不对 built-in desktop/installer 执行应用 rollback。
 - 每个应用映射独立非 root UID/GID；UID 碰撞失败关闭；manifest memory/CPU/files/data limits 映射到 rlimit 与 broker quota。
 - `storage.private` 只传 broker socket，不传目录 FD/path/root/key；sessiond 采用 no-follow、0600、bounded read 和原子替换。
 - `LVGL_INSTALLER_FD` 只传给 fixed built-in installer；sessiond 保留 inbox/official trust/policy/write transaction，child 只能发送 typed token 请求。

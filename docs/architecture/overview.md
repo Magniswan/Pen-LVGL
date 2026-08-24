@@ -48,7 +48,9 @@ policy root 与可移除 payload 分开，避免卸载等价于清空 release/se
 4. sessiond 重新验证目标 profile/machine/ABI/capabilities/state/digest/files。
 5. sessiond 拒绝 UID 映射碰撞，打开精确 DRM FD，应用 `setgroups(0)`、独立非 root UID/GID 与 manifest rlimit 后，从已验证 entry FD 执行 `fexecve`。
 6. runtime 完成 DRM/input 初始化后安装强制 AArch64 seccomp：禁止进程/网络/挂载/写路径/可执行映射，DRM ioctl 仅允许 `SETPLANE`、`RMFB`、`DESTROY_DUMB`。
-7. child 首次成功 present 后发送 READY；超时/崩溃则回 desktop。
+7. child 首次成功 present 后发送 READY；动态应用启动失败/崩溃时，sessiond 先完整复验 previous release，再原子提交 rollback，记录失败 current 为 quarantined 并保留 high-water；没有可信 previous 时只回 desktop，不改 policy。
+
+`top.lvgl.game2048` 可由有效正式安装版本覆盖；该动态 release 缺失/无效时只允许回退到官方签名平台包内的固定 built-in executable。任意其他 app ID 没有路径或可执行兜底。
 
 ## Private storage
 

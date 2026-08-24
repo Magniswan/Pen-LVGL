@@ -32,6 +32,8 @@ payload 与 anti-rollback policy 分根保存。active release 由双槽 state �
 4. 每个已安装文件的 owner、mode、nlink、大小和内容匹配；
 5. entry 是可执行普通文件，再从已验证 FD 启动。
 
+失败 rollback 不直接相信 state 中的 `previous_release`：sessiond 重新打开对应 release 目录、官方验签 `.package.lvapp`、匹配 previous digest/key/counter、逐文件复验并执行当前 profile policy。成功后新 generation 把原 current 写入 `quarantined_release`、previous 提升为 current、清空 previous，但保留 `high_release/high_digest/high_security_epoch`。
+
 ## Built-ins
 
 - `top.lvgl.desktop`：会话桌面。

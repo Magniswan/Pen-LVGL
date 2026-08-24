@@ -11,6 +11,7 @@
 | 修改/替换 inbox 包 | 完整 SHA-512 token、安装前重读重验、Ed25519 |
 | symlink/hardlink/path traversal | dirfd + `O_NOFOLLOW`、nlink=1、canonical path、固定 roots |
 | 降级到旧官方版本 | app-specific counter/epoch/digest 双槽 high-water |
+| 失败更新持续崩溃 | previous 包重新官方验签/逐文件复验后，双槽 rollback；失败 current 进入 quarantine，high-water 不下降 |
 | 修改已安装字节/mode/owner | 每次启动前逐文件复验并从 verified FD 执行 |
 | 伪造 desktop registry/launch path | sessiond-owned canonical registry；desktop 只传 app ID |
 | 触控重放/乱序/越界 | per-session nonce、strict sequence、monotonic age、contact lifecycle |

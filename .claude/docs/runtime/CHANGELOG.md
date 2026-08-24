@@ -2,6 +2,24 @@
 
 > 最新变更在最上方。
 
+## [2026-08-24] 接通失败 release 的安全回滚
+
+**类型**: security-fix
+**提交**: d8e1d68
+**风险**: HIGH
+
+### 安全性质
+
+- 动态 app 启动失败或异常退出时，previous package 必须重新官方验签、匹配 state digest/key/counter、逐文件复验并通过当前 profile policy。
+- 只有验证通过才调用 `rollback_failed_release` 并双槽持久化；失败 current 进入 quarantine，release/security high-water 不下降。
+- 无 previous、previous 损坏或 state 写失败时保持当前 policy，不进行未经证明的降级。
+- 修复 2048 动态 override 缺失时的过早返回；兜底仅来自已验签平台 release 的固定 built-in path。
+
+### 回滚指南
+
+- 回滚：`git revert d8e1d68`
+- 副作用：恢复“崩溃只回桌面、不隔离失败 release”的行为，并再次阻断 built-in 2048 兜底。
+
 ## [2026-08-24] 前台应用降权并安装强制 syscall sandbox
 
 **类型**: security
