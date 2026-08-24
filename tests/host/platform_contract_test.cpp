@@ -2,6 +2,7 @@
 #include "lvgl_platform/device_profile.h"
 #include "lvgl_platform/package_verifier.h"
 #include "lvgl_platform/rollback_policy.h"
+#include "lvgl_platform/release_state.h"
 #include "lvgl_platform/safe_path.h"
 #include "lvgl_platform/touch_protocol.h"
 #include "lvgl_platform/trust_store.h"
@@ -346,6 +347,97 @@ void test_trust_and_rollback_policy()
            "policy cannot be bypassed with a fabricated manifest");
 }
 
+void test_release_state()
+{
+    const auto crypto = lvgl_platform::CryptoProvider::load_default();
+    expect(crypto != nullptr, "release state crypto provider is available");
+    if(crypto == nullptr) return;
+    const auto signed_text = read_file(LVGL_PLATFORM_TEST_SIGNED_PACKAGE);
+    std::vector<std::uint8_t> bytes(signed_text.begin(), signed_text.end());
+    const lvgl_platform::TrustedPublicKey test_key {
+        decode_hex<32>("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"),
+        true};
+    auto candidate = lvgl_platform::verify_package(
+        bytes.data(), bytes.size(), *crypto, {test_key});
+    lvgl_platform::Sha512Digest digest_one {};
+    expect(candidate.ok() && crypto->sha512(bytes.data(), bytes.size(), digest_one),
+           "authenticated fixture initializes release state tests");
+
+    const auto first = lvgl_platform::activation_state_for(candidate, digest_one);
+    expect(first.has_value() && first->generation == 1 && first->current_release == 1 &&
+               first->previous_release == 0 && first->high_release == 1,
+           "first activation creates a monotonic initial state");
+    if(!first.has_value()) return;
+    const auto encoded_one = lvgl_platform::encode_release_state(*first, *crypto);
+    expect(encoded_one.ok(), encoded_one.detail.c_str());
+    const auto decoded_one = lvgl_platform::decode_release_state(
+        encoded_one.bytes.data(), encoded_one.bytes.size(), *crypto);
+    expect(decoded_one.ok() && decoded_one.state.app_id == first->app_id &&
+               decoded_one.state.current_digest == digest_one,
+           "release state survives a canonical binary round trip");
+    const auto idempotent = lvgl_platform::activation_state_for(candidate, digest_one, first);
+    expect(idempotent.has_value() && idempotent->generation == first->generation &&
+               idempotent->current_digest == first->current_digest,
+           "activating the current identical release is idempotent");
+
+    auto tampered = encoded_one.bytes;
+    tampered[24] ^= 0x01;
+    expect(lvgl_platform::decode_release_state(
+               tampered.data(), tampered.size(), *crypto).status ==
+               lvgl_platform::ReleaseStateStatus::checksum_mismatch,
+           "state checksum detects a modified release counter");
+    expect(lvgl_platform::decode_release_state(
+               encoded_one.bytes.data(), encoded_one.bytes.size() - 1, *crypto).status ==
+               lvgl_platform::ReleaseStateStatus::invalid_layout,
+           "truncated release state is rejected");
+
+    auto candidate_two = candidate;
+    candidate_two.manifest.release_counter = 2;
+    auto digest_two = digest_one;
+    digest_two[0] ^= 0x02;
+    const auto second = lvgl_platform::activation_state_for(candidate_two, digest_two, first);
+    expect(second.has_value() && second->generation == 2 && second->current_release == 2 &&
+               second->previous_release == 1 && second->high_release == 2,
+           "update activation preserves one previous release");
+    if(!second.has_value()) return;
+    const auto encoded_two = lvgl_platform::encode_release_state(*second, *crypto);
+    const auto selected = lvgl_platform::select_release_state(
+        encoded_one.bytes, encoded_two.bytes, *crypto);
+    expect(selected.ok() && selected.slot == 2 && selected.state.generation == 2 &&
+               !selected.redundancy_degraded,
+           "dual-slot recovery selects the newest complete generation");
+    const auto degraded = lvgl_platform::select_release_state({}, encoded_two.bytes, *crypto);
+    expect(degraded.ok() && degraded.slot == 2 && degraded.redundancy_degraded,
+           "one corrupt or missing slot recovers in explicitly degraded mode");
+
+    auto divergent = *second;
+    divergent.consecutive_launch_failures = 1;
+    const auto encoded_divergent = lvgl_platform::encode_release_state(divergent, *crypto);
+    expect(lvgl_platform::select_release_state(
+               encoded_two.bytes, encoded_divergent.bytes, *crypto).status ==
+               lvgl_platform::ReleaseStateStatus::split_brain,
+           "same-generation disagreement fails closed as split brain");
+
+    const auto rolled_back = lvgl_platform::rollback_failed_release(*second);
+    expect(rolled_back.has_value() && rolled_back->generation == 3 &&
+               rolled_back->current_release == 1 && rolled_back->previous_release == 0 &&
+               rolled_back->quarantined_release == 2 && rolled_back->high_release == 2,
+           "failed first launch rolls back once while retaining the high-water mark");
+    if(rolled_back.has_value()) {
+        expect(!lvgl_platform::activation_state_for(candidate_two, digest_two, rolled_back).has_value(),
+               "a quarantined release cannot be reactivated by reinstalling identical bytes");
+        auto candidate_three = candidate;
+        candidate_three.manifest.release_counter = 3;
+        auto digest_three = digest_two;
+        digest_three[1] ^= 0x03;
+        const auto third = lvgl_platform::activation_state_for(
+            candidate_three, digest_three, rolled_back);
+        expect(third.has_value() && third->current_release == 3 &&
+                   third->previous_release == 1 && third->high_release == 3,
+               "a newer official release can supersede a quarantined release");
+    }
+}
+
 }  // namespace
 
 int main()
@@ -355,6 +447,7 @@ int main()
     test_touch_protocol();
     test_package_verifier();
     test_trust_and_rollback_policy();
+    test_release_state();
     if(failures != 0) {
         std::cerr << failures << " test(s) failed\n";
         return EXIT_FAILURE;
