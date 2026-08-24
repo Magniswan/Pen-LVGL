@@ -18,7 +18,9 @@ set(CONFIG_LV_USE_THORVG_INTERNAL OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/lvgl EXCLUDE_FROM_ALL)
 
 add_library(lvgl_platform_contract STATIC
+    platform/src/crypto/crypto_provider.cpp
     platform/src/ipc/touch_protocol.cpp
+    platform/src/package/package_verifier.cpp
     platform/src/profile/device_profile.cpp
 )
 target_include_directories(lvgl_platform_contract PUBLIC
@@ -27,6 +29,7 @@ target_include_directories(lvgl_platform_contract PUBLIC
 target_include_directories(lvgl_platform_contract PRIVATE
     third_party/lvgl/src/libs/thorvg
 )
+target_link_libraries(lvgl_platform_contract PUBLIC ${CMAKE_DL_LIBS})
 if(MSVC)
     target_compile_options(lvgl_platform_contract PRIVATE /W4 /WX)
 else()
@@ -51,6 +54,8 @@ if(BUILD_TESTING)
     endif()
     target_compile_definitions(lvgl_platform_contract_tests PRIVATE
         LVGL_PLATFORM_TEST_PROFILE="${CMAKE_SOURCE_DIR}/profiles/y01-4.8.6.json"
+        LVGL_PLATFORM_TEST_DEV_PACKAGE="${CMAKE_SOURCE_DIR}/tests/vectors/lvapp/development.lvapp.dev"
+        LVGL_PLATFORM_TEST_SIGNED_PACKAGE="${CMAKE_SOURCE_DIR}/tests/vectors/lvapp/signed.lvapp"
     )
     add_test(NAME lvgl_platform_contract_tests
         COMMAND lvgl_platform_contract_tests

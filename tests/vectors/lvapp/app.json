@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "appId": "test.lvgl.vector",
+  "name": "LVAPP test vector",
+  "version": "1.0.0",
+  "releaseCounter": 1,
+  "securityEpoch": 0,
+  "sdkAbi": "1.0",
+  "minPlatformVersion": "1.0.0",
+  "entry": "bin/test-app",
+  "supportedProfiles": ["youdao-y01-4.8.6"],
+  "supportedMachines": ["aarch64"],
+  "capabilities": ["storage.private"],
+  "limits": {
+    "memoryMiB": 16,
+    "cpuSeconds": 60,
+    "maxFiles": 8,
+    "dataMiB": 2
+  },
+  "onlinePolicy": { "mode": "offline-v1" }
+}
