@@ -2,7 +2,7 @@
 
 import { readFile } from 'node:fs/promises';
 import {
-  buildDevelopmentPackage, parsePackage, signPackage, verifyPackageFile,
+  buildDevelopmentPackage, parsePackage, publicKeyInfo, signPackage, verifyPackageFile,
 } from './lib.mjs';
 
 function usage() {
@@ -12,6 +12,7 @@ function usage() {
     '  lvapp sign --input app.lvapp.dev --key ed25519-private.pem --out app.lvapp',
     '  lvapp inspect --input app.lvapp',
     '  lvapp verify --input app.lvapp --public-key ed25519-public.pem',
+    '  lvapp key-info --public-key ed25519-public.pem',
     '',
   ].join('\n'));
 }
@@ -52,6 +53,10 @@ try {
   } else if (command === 'verify') {
     report = await verifyPackageFile({
       input: required(values.input, 'input'),
+      publicKeyPath: required(values['public-key'], 'public-key'),
+    });
+  } else if (command === 'key-info') {
+    report = await publicKeyInfo({
       publicKeyPath: required(values['public-key'], 'public-key'),
     });
   } else {

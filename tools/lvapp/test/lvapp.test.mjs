@@ -7,7 +7,7 @@ import test from 'node:test';
 
 import {
   buildDevelopmentPackage, parsePackage, signPackage, validatePackagePath,
-  verifyPackageFile,
+  publicKeyInfo, verifyPackageFile,
 } from '../lib.mjs';
 
 function manifest() {
@@ -74,6 +74,17 @@ test('builds deterministic dev package, signs it, and verifies Ed25519', async (
   const verified = await verifyPackageFile({ input: signed, publicKeyPath: data.publicKeyPath });
   assert.equal(verified.signatureValid, true);
   assert.equal(verified.manifest.appId, 'top.lvgl.game2048');
+});
+
+test('reports the exact raw Ed25519 trust root without exposing private material', async () => {
+  const data = await fixture();
+  const report = await publicKeyInfo({ publicKeyPath: data.publicKeyPath });
+  assert.equal(report.algorithm, 'Ed25519');
+  assert.match(report.keyId, /^[0-9a-f]{32}$/u);
+  assert.match(report.rawPublicKeyHex, /^[0-9a-f]{64}$/u);
+  const publicKey = (await readFile(data.publicKeyPath, 'utf8'));
+  assert.doesNotMatch(JSON.stringify(report), /PRIVATE|BEGIN|END/u);
+  assert.match(publicKey, /BEGIN PUBLIC KEY/u);
 });
 
 test('development packages are byte-for-byte reproducible', async () => {

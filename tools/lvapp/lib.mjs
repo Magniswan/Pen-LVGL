@@ -445,3 +445,16 @@ export async function verifyPackageFile({ input, publicKeyPath }) {
   if (!publicKey) fail('PUBLIC_KEY_REQUIRED', 'verification requires an explicit public key');
   return parsed;
 }
+
+export async function publicKeyInfo({ publicKeyPath }) {
+  const publicKey = loadPublicKey(await readFile(publicKeyPath));
+  const jwk = publicKey.export({ format: 'jwk' });
+  if (typeof jwk.x !== 'string') fail('PUBLIC_KEY_EXPORT_INVALID', 'Ed25519 public key has no raw coordinate');
+  const raw = Buffer.from(jwk.x, 'base64url');
+  if (raw.length !== 32) fail('PUBLIC_KEY_EXPORT_INVALID', 'Ed25519 public key must contain 32 raw bytes');
+  return {
+    algorithm: 'Ed25519',
+    keyId: publicKeyId(publicKey).toString('hex'),
+    rawPublicKeyHex: raw.toString('hex'),
+  };
+}
