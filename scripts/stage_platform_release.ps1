@@ -52,11 +52,11 @@ function Assert-ProductionBuildCache {
             [regex]::Escape($OfficialPublicKeyHex) + '$')) {
         throw "Platform binaries must come from a Release production build pinned to this public key"
     }
-    $home = [regex]::Match($cache, '(?m)^CMAKE_HOME_DIRECTORY:INTERNAL=(.+)$')
-    if (-not $home.Success) {
+    $cmakeHomeMatch = [regex]::Match($cache, '(?m)^CMAKE_HOME_DIRECTORY:INTERNAL=(.+)$')
+    if (-not $cmakeHomeMatch.Success) {
         throw "Platform build cache is not bound to this source repository"
     }
-    $cacheHome = [IO.Path]::GetFullPath($home.Groups[1].Value.Trim())
+    $cacheHome = [IO.Path]::GetFullPath($cmakeHomeMatch.Groups[1].Value.Trim())
     $repositoryHome = [IO.Path]::GetFullPath($ReleaseRepository)
     if (-not $cacheHome.Equals($repositoryHome, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Platform build cache is not bound to this source repository"
