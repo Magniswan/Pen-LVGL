@@ -19,6 +19,13 @@ public:
     void destroy();
     bool stop_requested() const noexcept { return false; }
 
+#if defined(LVGL_PLATFORM_VISUAL_TESTING)
+    void visual_test_set_board(
+        const std::array<std::uint16_t, 16>& board, std::uint32_t score = 0) noexcept;
+    void visual_test_request_move(MoveDirection direction);
+    bool visual_test_geometry_valid() const noexcept;
+#endif
+
 private:
     static void gesture_event(lv_event_t* event);
     static void undo_event(lv_event_t* event);

@@ -196,6 +196,9 @@ if(BUILD_TESTING)
         lvgl_platform_contract
         lvgl_sdk_headers
     )
+    target_compile_definitions(game_2048_visual_test PRIVATE
+        LVGL_PLATFORM_VISUAL_TESTING=1
+    )
     if(MSVC)
         target_compile_options(game_2048_visual_test PRIVATE /W4 /WX /utf-8 /wd4996)
     else()
@@ -204,7 +207,7 @@ if(BUILD_TESTING)
         )
     endif()
     add_test(NAME game_2048_visual_test
-        COMMAND game_2048_visual_test "${CMAKE_SOURCE_DIR}/test-results/game-2048.ppm")
+        COMMAND game_2048_visual_test "${CMAKE_SOURCE_DIR}/test-results")
 endif()
 
 add_library(device_profile STATIC

@@ -63,6 +63,26 @@ test('offline signer binds private-key output to the pinned official public key'
   assert.doesNotMatch(source, /Get-Content.*SignerPrivate|WriteAll.*SignerPrivate|adb(?:\.exe)?\b/i);
 });
 
+test('official trust-root ceremony is public-only, source-bound, and proof-backed', () => {
+  const challenge = read('scripts/new_official_key_challenge.ps1');
+  const finalize = read('scripts/finalize_official_trust_root.ps1');
+  const combined = `${challenge}\n${finalize}`;
+  assert.match(challenge, /two distinct witness IDs/);
+  assert.match(challenge, /exact reviewed clean source commit/);
+  assert.match(challenge, /key-info[\s\S]*--public-key/);
+  assert.match(challenge, /lvgl-platform-official-key-ceremony-v1/);
+  assert.match(finalize, /ExpectedChallengeSha512/);
+  assert.match(finalize, /verify-key-proof[\s\S]*--signature \$TrustProof/);
+  assert.match(finalize, /proofValid/);
+  assert.match(finalize, /privateKeyMaterialAccepted = \$false/);
+  assert.match(finalize, /official-trust-root\.json/);
+  assert.match(finalize, /cmake-arguments\.txt/);
+  assert.match(finalize, /Refusing to overwrite trust-root output/);
+  assert.match(combined, /exactly Node v18\.20\.8/);
+  assert.match(combined, /written outside the source repository/);
+  assert.doesNotMatch(combined, /\[string\]\$PrivateKey|adb(?:\.exe)?\b/i);
+});
+
 test('Falcon release builders pin toolchains and inspect exact AMR contents', () => {
   const common = read('scripts/falcon_build_common.ps1');
   const launcher = read('scripts/build_launcher.ps1');

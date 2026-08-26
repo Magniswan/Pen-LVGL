@@ -48,6 +48,7 @@ root 可改内核、`ptrace`/写内存、替换动态链接器、拦截系统调
 - all-zero key 和 RFC 8032 test key 被构建系统拒绝。
 - dev build 的空 key 导致 verifier/manager/sessiond 不可用于生产安装。
 - 设备无导入 key、切换 key、忽略签名或“install anyway”入口。
+- 正式 provisioning 使用 exact challenge 的 Ed25519 proof-of-possession、双 witness 和仓库外 evidence bundle；详见 [key ceremony](key-ceremony.md)。
 
 ## Residual risks
 

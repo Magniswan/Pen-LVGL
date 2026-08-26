@@ -73,6 +73,7 @@ cmake --build build/platform-aarch64 --target \
 
 - [架构总览](docs/architecture/overview.md)
 - [安全威胁模型](docs/security/threat-model.md) 与 [安全政策](SECURITY.md)
+- [官方签名密钥仪式](docs/security/key-ceremony.md)
 - [解析器 fuzz 与 sanitizer](docs/security/fuzzing.md)
 - [SDK 快速开始](docs/sdk/quickstart.md) 和 [manifest 参考](docs/sdk/manifest-reference.md)
 - [发布与认证设备操作流程](docs/release/release-process.md)

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { generateKeyPairSync } from 'node:crypto';
+import {
+  createHash, createPrivateKey, generateKeyPairSync, sign as cryptoSign,
+} from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,7 +9,7 @@ import test from 'node:test';
 
 import {
   buildDevelopmentPackage, parsePackage, signPackage, validatePackagePath,
-  publicKeyInfo, verifyPackageFile,
+  publicKeyInfo, verifyKeyProof, verifyPackageFile,
 } from '../lib.mjs';
 
 function manifest() {
@@ -85,6 +87,29 @@ test('reports the exact raw Ed25519 trust root without exposing private material
   const publicKey = (await readFile(data.publicKeyPath, 'utf8'));
   assert.doesNotMatch(JSON.stringify(report), /PRIVATE|BEGIN|END/u);
   assert.match(publicKey, /BEGIN PUBLIC KEY/u);
+});
+
+test('verifies proof of possession for exact key-ceremony challenge bytes', async () => {
+  const data = await fixture();
+  const challengePath = path.join(data.directory, 'challenge.json');
+  const signaturePath = path.join(data.directory, 'proof.bin');
+  const challenge = Buffer.from('{"domain":"lvgl-platform-official-key-ceremony-v1"}\n');
+  const privateKey = createPrivateKey(await readFile(data.privateKeyPath));
+  await writeFile(challengePath, challenge);
+  await writeFile(signaturePath, cryptoSign(null, challenge, privateKey));
+  const report = await verifyKeyProof({
+    challengePath,
+    signaturePath,
+    publicKeyPath: data.publicKeyPath,
+  });
+  assert.equal(report.proofValid, true);
+  assert.equal(report.challengeSha512, createHash('sha512').update(challenge).digest('hex'));
+
+  await writeFile(challengePath, Buffer.concat([challenge, Buffer.from('tampered')]));
+  await assert.rejects(
+    verifyKeyProof({ challengePath, signaturePath, publicKeyPath: data.publicKeyPath }),
+    (error) => error.code === 'KEY_PROOF_INVALID',
+  );
 });
 
 test('development packages are byte-for-byte reproducible', async () => {

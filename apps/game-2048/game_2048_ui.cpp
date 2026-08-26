@@ -116,6 +116,7 @@ void Game2048Ui::create()
     lv_obj_set_style_bg_color(board_, lv_color_hex(0x1B292B), 0);
     lv_obj_set_style_border_width(board_, 1, 0);
     lv_obj_set_style_border_color(board_, lv_color_hex(0x45615E), 0);
+    lv_obj_set_style_pad_all(board_, 0, 0);
     lv_obj_set_style_shadow_width(board_, 20, 0);
     lv_obj_set_style_shadow_color(board_, lv_color_hex(0x071011), 0);
     lv_obj_set_style_shadow_opa(board_, LV_OPA_60, 0);
@@ -159,6 +160,36 @@ void Game2048Ui::destroy()
     board_ = nullptr;
     restart_box_ = nullptr;
 }
+
+#if defined(LVGL_PLATFORM_VISUAL_TESTING)
+void Game2048Ui::visual_test_set_board(
+    const std::array<std::uint16_t, 16>& board, std::uint32_t score) noexcept
+{
+    game_.set_board_for_test(board, score);
+}
+
+void Game2048Ui::visual_test_request_move(MoveDirection direction)
+{
+    request_move(direction);
+}
+
+bool Game2048Ui::visual_test_geometry_valid() const noexcept
+{
+    if(board_ == nullptr) return false;
+    lv_area_t board_area {};
+    lv_obj_get_coords(board_, &board_area);
+    for(const auto* tile : tiles_) {
+        if(tile == nullptr) return false;
+        lv_area_t tile_area {};
+        lv_obj_get_coords(const_cast<lv_obj_t*>(tile), &tile_area);
+        if(tile_area.x1 <= board_area.x1 || tile_area.y1 <= board_area.y1 ||
+           tile_area.x2 >= board_area.x2 || tile_area.y2 >= board_area.y2) {
+            return false;
+        }
+    }
+    return true;
+}
+#endif
 
 lv_color_t Game2048Ui::tile_color(std::uint16_t value) noexcept
 {

@@ -21,15 +21,15 @@
 ## P1 — SDK 与应用体验
 
 - 为已发布的 SDK `1.0` headers/export component 加入跨版本 ABI compatibility CI 与弃用策略。
-- 为 2048 离屏烟测增加逐帧 motion/reduced-motion golden image regression，并在认证硬件完成手势与帧时间基线。
+- 2048 已有确定性 initial/motion/resolution/terminal golden digest、棋盘边界检查和 reduced-motion 终态一致性；仍需在认证硬件完成手势与帧时间基线。
 - 完成 capability broker（audio/dictionary/haptics/scanner/network）。
 - 增加应用图标/本地化 metadata 的签名格式与 desktop cache。
 - 为 storage broker 增加删除/列举等经过审核的最小 API；v1 仍只有固定记录 read/atomic-write。
 
 ## P1 — 发布运维
 
-- 使用 HSM/硬件 token 的离线 signer、双人审批和透明 audit log。
-- key rotation/recovery drill、security epoch 响应手册和 reproducible release attestations。
+- 仓库已提供 HSM 公钥 challenge/proof-of-possession、双 witness 与 trust-root bundle 流程；仍需在真实 HSM 上执行生产 ceremony，并接入组织的 WORM/透明 audit log。
+- 在隔离测试 HSM 上完成 key rotation/recovery drill；v1 单 trust slot 的现场替换仍依赖经认证 platform/manager 渠道。
 - 已生成 SPDX 2.3 SBOM、license notices、构建证据和双摘要；后续增加 CVE scanning、签名 attestation、依赖镜像/来源证明与长期支持分支。
 
 ## 暂缓：在线能力

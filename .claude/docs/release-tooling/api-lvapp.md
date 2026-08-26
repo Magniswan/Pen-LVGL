@@ -27,10 +27,13 @@
 
 `key-info --public-key` 只接受 Ed25519 public key，输出算法、16-byte key ID 和 32-byte raw public key hex。offline handoff 用 raw hex 与事先批准的官方信任根做字节级相等比较，不能由待签包或私钥反向选择公钥。
 
+`verify-key-proof --challenge --signature --public-key` 要求 raw 64-byte Ed25519 signature，验证 exact challenge bytes，并输出 challenge SHA-512、key ID、raw key 和 `proofValid`。key ceremony 用它证明公开 ceremony record 对应的 HSM key 在仪式时可用。
+
 ## Release script APIs
 
 - `stage_platform_release.ps1`：输入 production build、认证 profile、输出目录、官方公钥 hex、version/counter/epoch；验证 build cache 绑定当前 source，执行 clean rebuild 后输出确定性 `.lvapp.dev` 与审计旁证，不接受私钥。
 - `sign_release.ps1`：输入 `.lvapp.dev`、仓库外 private key、public key、批准的 raw public key hex、dev SHA-512 与 40-hex source commit；要求 clean exact commit，输出正式 `.lvapp`、verification/key-info/source-evidence 和双摘要。
+- `new_official_key_challenge.ps1` / `finalize_official_trust_root.ps1`：只处理 public key、公开 challenge 和 detached proof；固定双 witness、epoch、activation、source 与 Node，输出仓库外 public trust-root evidence bundle，绝不接受私钥参数。
 - `build_launcher.ps1` / `build_manager.ps1`：输入精确 Node executable；production manager 额外要求全部 provisioning。输出 AMR path 和 SHA-256，不调用 ADB。
 
 四个入口和 `tools/lvapp` 都要求 Node 18.20.8；不同 Node 版本失败关闭。

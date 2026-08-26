@@ -448,6 +448,10 @@ export async function verifyPackageFile({ input, publicKeyPath }) {
 
 export async function publicKeyInfo({ publicKeyPath }) {
   const publicKey = loadPublicKey(await readFile(publicKeyPath));
+  return publicKeyReport(publicKey);
+}
+
+function publicKeyReport(publicKey) {
   const jwk = publicKey.export({ format: 'jwk' });
   if (typeof jwk.x !== 'string') fail('PUBLIC_KEY_EXPORT_INVALID', 'Ed25519 public key has no raw coordinate');
   const raw = Buffer.from(jwk.x, 'base64url');
@@ -456,5 +460,21 @@ export async function publicKeyInfo({ publicKeyPath }) {
     algorithm: 'Ed25519',
     keyId: publicKeyId(publicKey).toString('hex'),
     rawPublicKeyHex: raw.toString('hex'),
+  };
+}
+
+export async function verifyKeyProof({ challengePath, signaturePath, publicKeyPath }) {
+  const [challenge, signature, pem] = await Promise.all([
+    readFile(challengePath), readFile(signaturePath), readFile(publicKeyPath),
+  ]);
+  if (signature.length !== 64) fail('KEY_PROOF_LENGTH_INVALID', 'Ed25519 key proof must be exactly 64 bytes');
+  const publicKey = loadPublicKey(pem);
+  if (!cryptoVerify(null, challenge, publicKey, signature)) {
+    fail('KEY_PROOF_INVALID', 'Ed25519 key proof does not authenticate the exact challenge bytes');
+  }
+  return {
+    ...publicKeyReport(publicKey),
+    challengeSha512: createHash('sha512').update(challenge).digest('hex'),
+    proofValid: true,
   };
 }

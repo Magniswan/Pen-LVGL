@@ -9,6 +9,8 @@
 
 至少使用双人审批；signer 主机不连接设备、源码开发环境或公网。
 
+正式 key 首次启用前必须完成 [官方签名密钥仪式](../security/key-ceremony.md)：HSM 内不可导出生成、双 witness 核对、exact challenge 的 Ed25519 proof-of-possession，以及仓库外 trust-root evidence bundle。发布流程只接受该 bundle 中批准的 raw public key；不能从待签包、构建参数或 signer 私钥推导后自动接受 key。
+
 ## Application release
 
 1. 冻结 source commit、SDK ABI、tool versions 和 manifest。
@@ -104,6 +106,7 @@ SHA-256(
 - signer audit 只记录 key ID，不打印 PEM 或原始 key。
 - 备份使用离线加密介质/硬件设备和双人恢复。
 - 怀疑泄露立即执行 [SECURITY.md](../../SECURITY.md) 的 key compromise response。
+- 生成、proof、备份、轮换和恢复的可执行步骤见 [官方签名密钥仪式](../security/key-ceremony.md)。
 
 ## Current blocker
 

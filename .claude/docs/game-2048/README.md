@@ -31,7 +31,7 @@ gesture -> request_move -> Game2048::move (truth)
 - 入场、精确逐 tile 位移、merge pulse、spawn overshoot 与 score 动画完成。
 - reduced-motion 直接提交模型终态，不改变游戏规则。
 - board/score/best/phase/RNG/单步 undo 以 128-byte canonical record 原子持久化。
-- host model tests 与 960×266 离屏视觉烟测完成；逐帧 golden 与真机手势/性能认证仍在 roadmap。
+- host model tests 与 960×266 离屏视觉回归完成；固定 initial/motion/resolution/terminal digest、16 格边界和 reduced-motion 终态一致性，真机手势/性能认证仍在 roadmap。
 - 可生成开发 `.lvapp.dev`；正式包必须由官方离线密钥签名。
 
 ## 详细文档
