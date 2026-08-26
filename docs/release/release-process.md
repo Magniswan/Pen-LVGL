@@ -46,10 +46,11 @@ Reviewer 检查 source commit、manifest/profile、ELF evidence、SPDX/notices�
   -PublicKey <approved-official-public.pem> `
   -ExpectedPublicKeyHex <approved-32-byte-public-key-hex> `
   -ExpectedDevelopmentSha512 <reviewer-approved-128-hex> `
+  -ExpectedSourceCommit <reviewer-approved-40-hex-commit> `
   -OutputDirectory <new-signer-output-directory>
 ```
 
-脚本拒绝测试/全零公钥、仓库内私钥、digest/key 不匹配、链接输入与覆盖已有输出。signer 输出仍由 publisher 在另一个 public-key 环境复验。
+stager 会核对 CMake home 并从当前 clean source `--clean-first` 重建目标，构建后 source 有变化也会拒绝。两个脚本均要求 Node 18.20.8。signer 另拒绝非 reviewer-approved/dirty source commit、测试/全零公钥、仓库内私钥、digest/key 不匹配、链接输入与覆盖已有输出。signer 输出仍由 publisher 在另一个 public-key 环境复验。
 
 ## Platform/manager release
 
@@ -94,7 +95,7 @@ SHA-256(
 
 ## Fail-closed gates
 
-以下任一发生就停止发布：Git 不干净；缺官方 public key/payload/identity；profile 未认证；dev flag；测试 key；counter 冲突；reviewer SHA-512 不一致；非可复现 bytes；ELF ABI/NEEDED 不匹配；AMR 有额外/缺失条目；测试失败；signer/verifier key ID 不一致。
+以下任一发生就停止发布：Git 不干净或 source commit 不符；build cache 不属于当前 source；clean rebuild 失败；缺官方 public key/payload/identity；profile 未认证；dev flag；测试 key；counter 冲突；reviewer SHA-512 不一致；Node 版本不符；非可复现 bytes；ELF ABI/NEEDED 不匹配；AMR 有额外/缺失条目；测试失败；signer/verifier key ID 不一致。
 
 ## Private key rules
 

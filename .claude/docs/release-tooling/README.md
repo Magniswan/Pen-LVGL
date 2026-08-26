@@ -38,7 +38,7 @@ clean source + production AArch64 build + certified profile
   -> exact official raw public key/key ID + independent verify + final checksums
 ```
 
-stager 要求 clean Git、Release、`LVGL_PLATFORM_PRODUCTION_BUILD=ON`、CMake cache 中公钥与参数一致、认证 `profile.env` 精确 16 字段，且四个二进制均为 ELF64 little-endian AArch64。signer 拒绝仓库内私钥、测试/全零公钥、未批准 digest、输出覆盖和 key 不匹配。
+stager 要求 clean Git、CMake home 指向当前仓库、Release、`LVGL_PLATFORM_PRODUCTION_BUILD=ON`、CMake cache 中公钥与参数一致，并在打包前从当前 source `--clean-first` 重建四个目标；认证 `profile.env` 必须精确 16 字段，四个二进制均须为 ELF64 little-endian AArch64。signer 要求 reviewer 指定的 clean source commit 与 Node 18.20.8，并拒绝仓库内私钥、测试/全零公钥、未批准 digest、输出覆盖和 key 不匹配。
 
 ## AMR 发布
 

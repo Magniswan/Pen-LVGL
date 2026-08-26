@@ -29,6 +29,8 @@
 
 ## Release script APIs
 
-- `stage_platform_release.ps1`：输入 production build、认证 profile、输出目录、官方公钥 hex、version/counter/epoch；输出确定性 `.lvapp.dev` 与审计旁证，不接受私钥。
-- `sign_release.ps1`：输入 `.lvapp.dev`、仓库外 private key、public key、批准的 raw public key hex 与 dev SHA-512；输出正式 `.lvapp`、verification/key-info 和双摘要。
+- `stage_platform_release.ps1`：输入 production build、认证 profile、输出目录、官方公钥 hex、version/counter/epoch；验证 build cache 绑定当前 source，执行 clean rebuild 后输出确定性 `.lvapp.dev` 与审计旁证，不接受私钥。
+- `sign_release.ps1`：输入 `.lvapp.dev`、仓库外 private key、public key、批准的 raw public key hex、dev SHA-512 与 40-hex source commit；要求 clean exact commit，输出正式 `.lvapp`、verification/key-info/source-evidence 和双摘要。
 - `build_launcher.ps1` / `build_manager.ps1`：输入精确 Node executable；production manager 额外要求全部 provisioning。输出 AMR path 和 SHA-256，不调用 ADB。
+
+四个入口和 `tools/lvapp` 都要求 Node 18.20.8；不同 Node 版本失败关闭。

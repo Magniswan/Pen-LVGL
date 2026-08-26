@@ -22,11 +22,11 @@ dev 包故意无签名且 signing key ID 为零，设备端永远拒绝。扩展
 
 ## 不要在普通构建节点“顺手签名”
 
-`stage_platform_release.ps1` 故意没有私钥参数；`sign_release.ps1` 也要求私钥路径位于仓库外，并把待签 SHA-512 与事先批准值绑定。不要合并这两个角色、从待签包自动接受 key、覆盖已有输出，或把 signer 私钥放进 CI secret。
+`stage_platform_release.ps1` 故意没有私钥参数；它会验证 CMake home 并 clean rebuild，防止把旧 build 目录伪装为当前 commit。`sign_release.ps1` 要求 reviewer 指定的 clean source commit、私钥位于仓库外，并把待签 SHA-512 与事先批准值绑定。不要合并这两个角色、从待签包自动接受 key、覆盖已有输出，或把 signer 私钥放进 CI secret。
 
 ## clean Git 不等于可复现证明
 
-stager 将 commit/timestamp 和构建证据绑定到输出，但正式门禁仍要两个独立 clean build 逐字节比较。SBOM/notices 也不等于 CVE 扫描、来源 attestation 或 license 法律审查；这些后续项保留在 ROADMAP。
+stager 从当前 clean source 强制 clean rebuild，并将 commit/timestamp 和构建证据绑定到输出；正式门禁仍要两个独立环境的 clean build 逐字节比较。SBOM/notices 也不等于 CVE 扫描、来源 attestation 或 license 法律审查；这些后续项保留在 ROADMAP。
 
 ## AMR 内层 MD5 不是平台信任根
 

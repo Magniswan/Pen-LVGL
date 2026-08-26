@@ -2,6 +2,17 @@
 
 > 最新变更在最上方。
 
+## [2026-08-26] 将发布产物绑定到 reviewer-approved source
+
+**类型**: security-fix
+**提交**: 16765df
+**风险**: HIGH
+
+- stager 验证 CMake home 指向当前 clean repository，重新 configure 并 `--clean-first` 构建四个 production targets，构建后再次检查 source/HEAD 未变化。
+- stager/signer 均固定 Node 18.20.8；signer 新增 40-hex `ExpectedSourceCommit`，要求精确 clean commit 并输出 `source-evidence.json`。
+- 修复“build evidence 记录当前 commit，但 payload 实际来自旧 build directory”的证明缺口。
+- 回滚：`git revert 16765df` 会恢复 stale-build/未绑定 signer source 风险，禁止用于正式发布。
+
 ## [2026-08-26] 固定 Falcon AMR 构建与归档检查
 
 **类型**: security

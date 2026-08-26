@@ -2,6 +2,16 @@
 
 > 最新变更在最上方。
 
+## [2026-08-26] 验证 production build cache 的 source 归属
+
+**类型**: security-fix
+**提交**: 16765df
+**风险**: HIGH
+
+- release stager 要求 `CMAKE_HOME_DIRECTORY` 精确指向当前仓库，并在打包前 clean rebuild。
+- build cache、公钥、production mode、source commit 任一不一致都失败关闭。
+- 回滚：`git revert 16765df` 会允许陈旧 build directory 被错误归因到当前 commit。
+
 ## [2026-08-26] 固定 Falcon 发布工具链
 
 **类型**: security
