@@ -2,6 +2,17 @@
 
 > 最新变更在最上方。
 
+## [2026-08-26] 固定离屏关键帧并修复棋盘裁切
+
+**类型**: visual-regression-fix
+**提交**: 9870570
+**风险**: LOW
+
+- 显式清零 board container 的主题 padding，960×266 布局中第四列/第四行不再越界裁切。
+- visual test 固定高信息量 board，覆盖 initial、motion、resolution、terminal 四个像素 digest，并检查 16 格几何边界。
+- reduced-motion 终态必须与完整动画终态逐像素摘要一致；测试仍输出 PPM 供人工审阅。
+- 回滚：`git revert 9870570` 会同时撤回该提交中的 key ceremony 能力，并恢复旧视觉烟测与裁切风险。
+
 ## [2026-08-26] 迁移到公开 SDK 1.0
 
 **类型**: refactor

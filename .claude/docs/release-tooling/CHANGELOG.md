@@ -2,6 +2,18 @@
 
 > 最新变更在最上方。
 
+## [2026-08-26] 增加官方 trust-root proof ceremony
+
+**类型**: security
+**提交**: 9870570、9c682ae
+**风险**: HIGH
+
+- 新增仓库外 key challenge 与 trust-root finalizer，绑定 clean source、双 witness、epoch、activation、Node 18.20.8、raw public key 和 PEM 摘要。
+- `verify-key-proof` 对 exact challenge bytes 验证 raw 64-byte Ed25519 proof-of-possession；bundle 不接受或携带私钥。
+- 正向 rehearsal 生成并复核 7 项公开证据；一次性仓库外测试 key/产物随后清理。67 个 Node tests 与 4 个 CTest 通过。
+- `9c682ae` 修复 PowerShell 7 ISO timestamp 自动反序列化：重新规范化 UTC，并与原始 JSON 中的 canonical 字符串精确比对。
+- 回滚：依次 `git revert 9c682ae 9870570`；这会移除 production key provisioning 的可执行证据链，不得在已有正式 trust root 后执行。
+
 ## [2026-08-26] 使 Falcon AMR 外层可复现
 
 **类型**: reproducibility-fix
