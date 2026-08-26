@@ -54,6 +54,19 @@ function Convert-ReleaseWslPath {
     return $converted.Trim()
 }
 
+function Get-ReleaseWslToolSize {
+    param([Parameter(Mandatory)][string]$Path)
+    if ($Path -notmatch '^/[^\r\n]+$') { throw "Release build tool path must be absolute" }
+    $sizeText = & wsl.exe -d $WslDistribution -- bash -lc `
+        'if [ -f "$1" ] && [ ! -L "$1" ]; then stat -c %s -- "$1"; else exit 1; fi' _ $Path
+    [long]$size = 0
+    if ($LASTEXITCODE -ne 0 -or -not [long]::TryParse($sizeText.Trim(), [ref]$size) -or
+        $size -le 0 -or $size -gt 64MB) {
+        throw "Release build tool must be a bounded regular non-link file: $Path"
+    }
+    return $size
+}
+
 function Assert-ProductionBuildCache {
     param([Parameter(Mandatory)][string]$CachePath)
     $cache = Get-Content -Raw -LiteralPath $CachePath
@@ -72,6 +85,23 @@ function Assert-ProductionBuildCache {
     if ($cacheHome -cne $repositoryHome) {
         throw "Platform build cache is not bound to this source repository"
     }
+    $cmakeCommandMatch = [regex]::Match($cache, '(?m)^CMAKE_COMMAND:INTERNAL=(.+)$')
+    $ninjaCommandMatch = [regex]::Match(
+        $cache, '(?m)^CMAKE_MAKE_PROGRAM:(?:FILEPATH|INTERNAL|UNINITIALIZED)=(.+)$')
+    if (-not $cmakeCommandMatch.Success -or -not $ninjaCommandMatch.Success) {
+        throw "Platform build cache does not identify its build tools"
+    }
+    $cmakeCommand = $cmakeCommandMatch.Groups[1].Value.Trim()
+    $ninjaCommand = $ninjaCommandMatch.Groups[1].Value.Trim()
+    $null = Get-ReleaseWslToolSize -Path $cmakeCommand
+    $null = Get-ReleaseWslToolSize -Path $ninjaCommand
+    $cmakeVersion = @(& wsl.exe -d $WslDistribution -- $cmakeCommand --version)
+    $ninjaVersion = (& wsl.exe -d $WslDistribution -- $ninjaCommand --version).Trim()
+    if ($LASTEXITCODE -ne 0 -or $cmakeVersion.Count -eq 0 -or
+        $cmakeVersion[0] -cne 'cmake version 3.31.6' -or $ninjaVersion -cne '1.12.1') {
+        throw "Release builds require exactly CMake 3.31.6 and Ninja 1.12.1"
+    }
+    return [pscustomobject]@{ CMake = $cmakeCommand; Ninja = $ninjaCommand }
 }
 
 function Assert-ReleaseAarch64Elf {
@@ -146,12 +176,17 @@ $gitTimestamp = [DateTimeOffset]::FromUnixTimeSeconds(
     [long]((& git -C $ReleaseRepository show -s --format=%ct HEAD).Trim()))
 $cachePath = Join-Path $ReleaseBuild 'CMakeCache.txt'
 $null = Get-ReleaseRegularFile -Path $cachePath -MaximumBytes (16MB)
-Assert-ProductionBuildCache -CachePath $cachePath
+$buildTooling = Assert-ProductionBuildCache -CachePath $cachePath
 
-& wsl.exe -d $WslDistribution -- cmake -S $ReleaseRepositoryWsl -B $ReleaseBuildWsl | Out-Host
+& wsl.exe -d $WslDistribution -- $buildTooling.CMake `
+    -S $ReleaseRepositoryWsl -B $ReleaseBuildWsl | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "Production build reconfiguration failed" }
-Assert-ProductionBuildCache -CachePath $cachePath
-& wsl.exe -d $WslDistribution -- cmake --build $ReleaseBuildWsl --config Release `
+$postConfigureTooling = Assert-ProductionBuildCache -CachePath $cachePath
+if ($postConfigureTooling.CMake -cne $buildTooling.CMake -or
+    $postConfigureTooling.Ninja -cne $buildTooling.Ninja) {
+    throw "Production build tools changed during reconfiguration"
+}
+& wsl.exe -d $WslDistribution -- $buildTooling.CMake --build $ReleaseBuildWsl --config Release `
     --clean-first --target `
     lvgl_sessiond lvgl_launcher lvgl_installer game_2048 | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "Clean production platform rebuild failed" }

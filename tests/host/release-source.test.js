@@ -13,7 +13,10 @@ test('platform staging accepts only clean certified production inputs', () => {
   assert.match(source, /LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX:STRING=/);
   assert.match(source, /CMAKE_HOME_DIRECTORY:INTERNAL/);
   assert.doesNotMatch(source, /\$home\b/i);
-  assert.match(source, /wsl\.exe -d \$WslDistribution -- cmake -S \$ReleaseRepositoryWsl -B \$ReleaseBuildWsl/);
+  assert.match(source, /CMAKE_COMMAND:INTERNAL/);
+  assert.match(source, /CMAKE_MAKE_PROGRAM/);
+  assert.match(source, /exactly CMake 3\.31\.6 and Ninja 1\.12\.1/);
+  assert.match(source, /wsl\.exe -d \$WslDistribution -- \$buildTooling\.CMake/);
   assert.match(source, /wslpath -a/);
   assert.match(source, /--clean-first --target[\s\S]*lvgl_sessiond[\s\S]*game_2048/);
   assert.match(source, /Source changed during the clean production rebuild/);
