@@ -7,6 +7,7 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
     [Parameter(Mandatory)][ValidateRange(1, [long]::MaxValue)][long]$ReleaseCounter,
     [Parameter(Mandatory)][ValidateRange(0, [uint32]::MaxValue)][long]$SecurityEpoch,
+    [string]$WslDistribution = "Ubuntu",
     [string]$Node = "node"
 )
 
@@ -43,6 +44,16 @@ function Get-LockedReleaseNode {
     return $resolved
 }
 
+function Convert-ReleaseWslPath {
+    param([Parameter(Mandatory)][string]$Path)
+    $resolved = [IO.Path]::GetFullPath($Path)
+    $converted = & wsl.exe -d $WslDistribution -- bash -lc 'wslpath -a "$1"' _ $resolved
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($converted)) {
+        throw "Unable to convert release path for WSL: $resolved"
+    }
+    return $converted.Trim()
+}
+
 function Assert-ProductionBuildCache {
     param([Parameter(Mandatory)][string]$CachePath)
     $cache = Get-Content -Raw -LiteralPath $CachePath
@@ -56,9 +67,9 @@ function Assert-ProductionBuildCache {
     if (-not $cmakeHomeMatch.Success) {
         throw "Platform build cache is not bound to this source repository"
     }
-    $cacheHome = [IO.Path]::GetFullPath($cmakeHomeMatch.Groups[1].Value.Trim())
-    $repositoryHome = [IO.Path]::GetFullPath($ReleaseRepository)
-    if (-not $cacheHome.Equals($repositoryHome, [StringComparison]::OrdinalIgnoreCase)) {
+    $cacheHome = $cmakeHomeMatch.Groups[1].Value.Trim().TrimEnd('/')
+    $repositoryHome = $ReleaseRepositoryWsl.TrimEnd('/')
+    if ($cacheHome -cne $repositoryHome) {
         throw "Platform build cache is not bound to this source repository"
     }
 }
@@ -112,6 +123,8 @@ if ($OfficialPublicKeyHex -eq ('0' * 64) -or $OfficialPublicKeyHex -eq $ReleaseF
     throw "The all-zero and RFC 8032 test public keys are forbidden"
 }
 $releaseNode = Get-LockedReleaseNode -Executable $Node
+$ReleaseRepositoryWsl = Convert-ReleaseWslPath -Path $ReleaseRepository
+$ReleaseBuildWsl = Convert-ReleaseWslPath -Path $ReleaseBuild
 if (Test-Path -LiteralPath $ReleaseOutput) {
     throw "Refusing to overwrite release output: $ReleaseOutput"
 }
@@ -135,10 +148,11 @@ $cachePath = Join-Path $ReleaseBuild 'CMakeCache.txt'
 $null = Get-ReleaseRegularFile -Path $cachePath -MaximumBytes (16MB)
 Assert-ProductionBuildCache -CachePath $cachePath
 
-& cmake -S $ReleaseRepository -B $ReleaseBuild | Out-Host
+& wsl.exe -d $WslDistribution -- cmake -S $ReleaseRepositoryWsl -B $ReleaseBuildWsl | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "Production build reconfiguration failed" }
 Assert-ProductionBuildCache -CachePath $cachePath
-& cmake --build $ReleaseBuild --config Release --clean-first --target `
+& wsl.exe -d $WslDistribution -- cmake --build $ReleaseBuildWsl --config Release `
+    --clean-first --target `
     lvgl_sessiond lvgl_launcher lvgl_installer game_2048 | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "Clean production platform rebuild failed" }
 $postBuildStatus = @(& git -C $ReleaseRepository status --porcelain=v1 --untracked-files=all)
