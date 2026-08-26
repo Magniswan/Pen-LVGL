@@ -82,13 +82,21 @@ if ($LASTEXITCODE -ne 0 -or $status.Count -ne 0 -or $commit -cne $ExpectedSource
 }
 $nodeInfo = Get-TrustNode -Executable $Node
 $challengeData = $challengeText | ConvertFrom-Json
+$activationMatch = [regex]::Match(
+    $challengeText, '(?m)^  "activationUtc": "(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)",$')
+$activationUtc = if ($challengeData.activationUtc -is [DateTime]) {
+    ([DateTimeOffset]$challengeData.activationUtc).ToUniversalTime().ToString(
+        'yyyy-MM-ddTHH:mm:ssZ', [Globalization.CultureInfo]::InvariantCulture)
+} else {
+    [string]$challengeData.activationUtc
+}
 if ($challengeData.domain -cne 'lvgl-platform-official-key-ceremony-v1' -or
     $challengeData.algorithm -cne 'Ed25519' -or
     $challengeData.rawPublicKeyHex -cne $ExpectedPublicKeyHex -or
     $challengeData.sourceCommit -cne $commit -or
     [string]$challengeData.keyId -notmatch '^[0-9a-f]{32}$' -or
     [string]$challengeData.ceremonyId -notmatch '^[a-z0-9][a-z0-9._-]{7,63}$' -or
-    [string]$challengeData.activationUtc -notmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$' -or
+    -not $activationMatch.Success -or $activationUtc -cne $activationMatch.Groups[1].Value -or
     [long]$challengeData.securityEpoch -lt 0 -or
     @($challengeData.witnesses).Count -ne 2 -or
     $challengeData.witnesses[0].role -cne 'primary' -or
@@ -139,7 +147,7 @@ try {
         challengeSha512 = $ExpectedChallengeSha512
         proofSha256 = (Get-FileHash -LiteralPath $TrustProof -Algorithm SHA256).Hash.ToLowerInvariant()
         securityEpoch = [long]$challengeData.securityEpoch
-        activationUtc = [string]$challengeData.activationUtc
+        activationUtc = $activationUtc
         sourceCommit = $commit
         witnesses = @($challengeData.witnesses)
         privateKeyMaterialAccepted = $false
