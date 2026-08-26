@@ -10,6 +10,14 @@
 
 app ID 一经公开应保持稳定；不要把名称、路径或版本拼进 ID。
 
+应用源码只包含公开头，通常从聚合入口开始：
+
+```cpp
+#include <lvgl_platform/sdk.hpp>
+```
+
+不要包含仓库 `src/runtime` 或 `src/shell` 下的内部转发头。
+
 ## 2. Register the target
 
 在顶层 CMake 的 target runtime 区域添加子目录，或直接调用：
@@ -24,6 +32,14 @@ lvgl_add_application(my_app
 ```
 
 helper 自动链接 `platform_runtime` 和 `app_shell`、注入 `LVGL_APPLICATION_ID`，并开启 warning-as-error。应用不要自行打开 DRM、evdev、session socket 或 `/userdisk` 路径。
+
+若作为独立工程消费 SDK，先安装 SDK component：
+
+```text
+cmake --install <platform-build> --component sdk --prefix <sdk-prefix>
+```
+
+安装内容为 `include/lvgl_platform/*.hpp` 与 `lib/cmake/lvgl-platform/LvglApplication.cmake`。SDK ABI 固定为 `1.0`，发布前必须进行全量重编和 header compile test。
 
 ## 3. Implement lifecycle
 

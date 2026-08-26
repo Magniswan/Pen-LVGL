@@ -20,12 +20,43 @@
 7. 记录最终 SHA-256、signer key ID、app/version/counter/epoch、commit 与测试报告。
 8. 只把最终 `.lvapp` 放入 root-owned fixed inbox；设备 installer 仍会独立重验。
 
+应用 signer 可直接使用 `lvapp sign/verify`；平台正式发布必须使用下述脚本，把 builder 与 signer 的输入输出结构固定下来。
+
+## Executable offline handoff
+
+Builder 在 clean worktree、production AArch64 Release build 和已认证 `profile.env` 上运行：
+
+```powershell
+./scripts/stage_platform_release.ps1 `
+  -BuildDirectory build/platform-production `
+  -CertifiedProfileEnv <certified-profile.env> `
+  -OutputDirectory <new-staging-directory> `
+  -OfficialPublicKeyHex <approved-32-byte-public-key-hex> `
+  -Version <semver> `
+  -ReleaseCounter <monotonic-counter> `
+  -SecurityEpoch <epoch>
+```
+
+Reviewer 检查 source commit、manifest/profile、ELF evidence、SPDX/notices、inspection 和测试记录，并通过独立渠道批准 `top.lvgl.platform.lvapp.dev` 的 SHA-512。隔离 signer 只接受这一个 digest：
+
+```powershell
+./scripts/sign_release.ps1 `
+  -DevelopmentPackage <top.lvgl.platform.lvapp.dev> `
+  -PrivateKey <repository-external-offline-private.pem> `
+  -PublicKey <approved-official-public.pem> `
+  -ExpectedPublicKeyHex <approved-32-byte-public-key-hex> `
+  -ExpectedDevelopmentSha512 <reviewer-approved-128-hex> `
+  -OutputDirectory <new-signer-output-directory>
+```
+
+脚本拒绝测试/全零公钥、仓库内私钥、digest/key 不匹配、链接输入与覆盖已有输出。signer 输出仍由 publisher 在另一个 public-key 环境复验。
+
 ## Platform/manager release
 
 1. 真机认证 `profile.env`，记录 connector/CRTC/overlay/rotation/touch evidence。
 2. 以 `top.lvgl.platform` manifest 打包完整 platform release 并离线签名。
 3. 用 production 参数构建 manager native plugin，嵌入同一 signed platform bytes、official public key、profile/machine 和 device identity digest。
-4. 构建 manager/launcher AMR，记录 AMR SHA-256。
+4. 用精确 Node 18.20.8 运行 `scripts/build_manager.ps1 -Production` 与 `scripts/build_launcher.ps1 -Production`；两者检查 `aiot-vue-cli 1.0.32`、AArch64 bridge、AMR 精确条目/manifest cert 并记录 SHA-256。
 5. 在隔离的认证测试笔上执行 install/repair/upgrade/remove/crash/reboot/tamper/rollback matrix。
 6. 只有全门禁通过才发布 AMR；launcher 与 manager AppID 固定且相互独立。
 
@@ -63,7 +94,7 @@ SHA-256(
 
 ## Fail-closed gates
 
-以下任一发生就停止发布：缺官方 public key/payload/identity；profile 未认证；dev flag；测试 key；counter 冲突；非可复现 bytes；ELF ABI/NEEDED 不匹配；测试失败；signer/verifier key ID 不一致。
+以下任一发生就停止发布：Git 不干净；缺官方 public key/payload/identity；profile 未认证；dev flag；测试 key；counter 冲突；reviewer SHA-512 不一致；非可复现 bytes；ELF ABI/NEEDED 不匹配；AMR 有额外/缺失条目；测试失败；signer/verifier key ID 不一致。
 
 ## Private key rules
 

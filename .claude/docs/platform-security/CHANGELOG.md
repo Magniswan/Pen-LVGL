@@ -2,6 +2,24 @@
 
 > 最新变更在最上方；排查签名、安装或状态问题时优先阅读。
 
+## [2026-08-26] 增加 token-bound 手动 rollback/remove
+
+**类型**: security
+**提交**: 0c4de06
+**风险**: HIGH
+
+### 安全性质
+
+- installed snapshot token 绑定 payload directory identity 与完整 policy state，变更前重新枚举匹配。
+- rollback 重验 official previous、隔离 current、保留 release/security high-water，且不增加 launch failure。
+- remove 原子隔离 payload、同设备有界 no-follow 清理，保留 policy 与 private data。
+- 独立 audit 记录 BEGIN/COMMIT/ISOLATED；UI 协议仍不包含路径、key 或 caller policy。
+
+### 回滚指南
+
+- 回滚：`git revert 0c4de06`；必须同步回滚 installer v2 client/UI/protocol。
+- 副作用：失去设备内受控恢复/卸载能力，但不会清理已存在 policy/data/audit。
+
 ## [2026-08-24] 增加 parser fuzz 与 sanitizer CI 基线
 
 **类型**: security-test

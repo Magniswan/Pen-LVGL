@@ -31,3 +31,9 @@ development 包设置 dev flag、无 envelope、manifest key ID 全零。product
 ## Manifest policy fields
 
 `releaseCounter` 为每 app 单调版本轴，`securityEpoch` 用于安全代际；`sdkAbi/minPlatformVersion/supportedProfiles/supportedMachines/capabilities/limits/onlinePolicy` 共同构成设备安装与启动策略输入。
+
+## Release evidence bundle
+
+staging 输出目录分为不可签名旁证和待签 artifact。旁证包含 source commit/timestamp、profile identity、官方 public-key hex、manifest 源、`lvapp inspect` 结果、逐文件 size/SHA-256、构建参数、SPDX 2.3 document、license notices 以及 dev package SHA-256/SHA-512。signer 只对 reviewer 批准 SHA-512 的 `.lvapp.dev` 生成 envelope，并另外记录 `key-info.json`、`verification.json` 与最终双摘要。
+
+SBOM 中每个打包文件对应一个 SPDX file 与 checksum，package 通过 `CONTAINS` relationship 关联全部文件；它是审计证据，不替代漏洞扫描或签名验证。

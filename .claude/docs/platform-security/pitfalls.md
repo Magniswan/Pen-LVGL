@@ -11,3 +11,5 @@
 9. 生产公钥不是秘密，隐藏它不会提升安全；必须保护的是离线私钥和发布流程。
 10. 面对已取得 root 且设备无验证启动的攻击者，不得宣传“防破解完成”；应明确软件边界并规划 secure boot/TEE。
 11. 不要把 app-private 目录 FD 重新交给应用；否则应用能绕过 broker quota、记录语法和原子提交策略。
+12. 手动 lifecycle mutation 不能只按 app ID；必须重算并匹配 installed snapshot token，否则会重新引入选择—执行 TOCTOU。
+13. payload remove 不等于清除 policy/data；删除 high-water 会允许旧正式包回滚，删除 private data 也超出卸载授权。

@@ -37,3 +37,11 @@ registry 不是授权数据库。sessiond 每次从签名包和 current state �
 ## Inbox Token
 
 token 是整个候选文件的 64-byte SHA-512 小写十六进制（128 字符），用于将一次 UI 选择绑定到重新扫描后的同一字节内容。它不是签名或秘密，也不能替代官方验签。
+
+## Installed Snapshot Token
+
+已安装 token 也是 128 字符小写 SHA-512，但使用独立 domain `LVGL-INSTALLED-SNAPSHOT-v1`，覆盖 canonical app ID、payload directory 的 device/inode/ctime，以及 release state 的 generation/current/previous/high/quarantine/security epoch/failure count/key ID/三个 digest；无可信 state 时显式写入 `untrusted-policy`。它将 rollback/remove 绑定到枚举时的完整快照，不能跨状态复用。
+
+## Lifecycle audit / tombstone
+
+每个 app 的 audit 是 root-owned 0600 bounded append log，记录 epoch seconds、`rollback|remove`、`BEGIN|COMMIT|ISOLATED` 与 generation。payload remove 的 tombstone 名为 `.removed-<24 lowercase hex>`，位于 payload apps root；清理只在同一 device 内递归，最大深度 128、节点 8192，中断后可由下次请求继续。

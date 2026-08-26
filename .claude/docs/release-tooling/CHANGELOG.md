@@ -2,6 +2,39 @@
 
 > 最新变更在最上方。
 
+## [2026-08-26] 固定 Falcon AMR 构建与归档检查
+
+**类型**: security
+**提交**: 16d557f
+**风险**: HIGH
+
+- 精确固定 Node 18.20.8 与 `aiot-vue-cli 1.0.32`。
+- launcher/manager 统一验证 native bridge、AMR 四条目、manifest cert MD5 与外层 SHA-256。
+- production `app.js.bin` 和 development `app.js` 分模式验证，脚本无 ADB 路径。
+- 回滚：`git revert 16d557f`；会恢复未检查的工具链/归档输出。
+
+## [2026-08-26] 新增失败关闭的离线发布交接
+
+**类型**: feat
+**提交**: 381027e
+**风险**: HIGH
+
+### 变更文件
+
+| 文件 | 说明 |
+|---|---|
+| `scripts/stage_platform_release.ps1` | 从 clean production build 生成确定性 dev 包、evidence、SPDX SBOM/notices 与双摘要 |
+| `scripts/sign_release.ps1` | 把仓库外私钥签名绑定到批准 SHA-512 和精确官方 raw public key |
+| `tools/lvapp/cli.mjs` / `lib.mjs` | 新增 Ed25519 `key-info` |
+| `tests/host/release-source.test.js` | 固化 clean build、no-private-key、no-ADB、key/digest binding |
+
+### 影响范围
+
+- **职责分离**: builder/reviewer/offline signer/publisher 具备可执行交接物。
+- **产物**: 新增 build evidence、manifest source、inspection、SPDX 2.3、notices、SHA-256/SHA-512。
+- **验证**: production-mode AArch64 rehearsal 两次 staging 字节一致；使用审计 key/profile，仅为工具链证据，不是正式发布。
+- **回滚**: `git revert 381027e` 会移除标准离线交接入口，不影响既有包格式。
+
 ## [2026-08-24] 固定 ADB 目标并复验设备 identity
 
 **类型**: security

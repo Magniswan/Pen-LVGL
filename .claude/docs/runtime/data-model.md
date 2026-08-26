@@ -24,6 +24,10 @@
 
 `SOCK_SEQPACKET` 上每个 packet 是 96-byte `LVSTOR1` header 加最多 64 KiB data。request 包含 read/write、非零 request ID、canonical record、单记录 maximum；response 回显 command/ID 并返回闭合 status。reserved/padding 必须全零，错误 response 不带 data。sessiond 用 authenticated `maxFiles`/`dataMiB` 评估整个 app 目录，不信任应用自报 quota。
 
+## Installer Broker v2
+
+160-byte request / 768-byte response，magic `LVINST2`、version 2、非零 request ID、全零 reserved/padding。闭合命令为 inbox scan/candidate/install 与 installed scan/candidate/rollback/remove。install token 绑定包 bytes；rollback/remove token 绑定 payload directory identity 与完整 policy state。协议没有路径、公钥、manifest、app ID mutation 或 shell 字段。
+
 ## Program Policy
 
 `ApplicationResourceLimits` 的 memory MiB、CPU seconds、maximum files、data MiB 来自已验签 manifest。sessiond 派生碰撞检测 UID/GID，设置 AS/CPU/core/file-size/open-files/processes/memlock/stack rlimit；runtime marker 存在时，非 AArch64 或 seccomp 安装失败均拒绝运行。

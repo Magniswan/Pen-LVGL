@@ -50,3 +50,13 @@
 | `install_official_inbox_candidate(token, ...)` | token 必须是返回的 128 位小写 SHA-512；重新扫描和验签 |
 
 收件箱服务没有路径、公钥或 “allow development” 参数。扫描结果的 `installable` 只是预检；安装仍执行完整事务，不能绕过最终策略。
+
+## 已安装生命周期
+
+sessiond 的 installed snapshot 枚举从固定 payload/policy roots 读取真实状态，生成绑定 directory device/inode/ctime、state generation/releases/high-water/digests/key ID 的 SHA-512 token。`rollback(token)` 和 `remove(token)` 都在变更前重新枚举并精确匹配：
+
+- rollback：重新打开并官方验签 previous package、逐文件复测、重跑当前 profile/policy，然后通过 `rollback_release(active, false)` 持久化新双槽 state；
+- remove：先把 payload app directory 原子 rename 到随机 tombstone，再进行 no-follow、同设备、深度/节点有界清理；policy 与 private data 不在删除 root；
+- audit：在独立 root-owned policy audit directory 记录有界 0600 `BEGIN/COMMIT/ISOLATED` 行并原子轮转。
+
+这些是 sessiond 内部特权服务，不是应用 SDK。调用方不能提供 app ID、路径、release、digest、policy 或公钥来替代 snapshot。

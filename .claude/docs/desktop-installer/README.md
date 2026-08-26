@@ -23,6 +23,8 @@
   -> sessiond 重新构建只读 registry
 ```
 
+“已安装”页通过同一 broker 枚举可信/退化状态；手动 rollback 与 payload remove 都只提交 128 字节 SHA-512 snapshot token。sessiond 在变更前重新枚举、匹配 token 并复验真实状态，UI 不提交 app ID、release、路径或策略。
+
 桌面只提交 stable app ID，不持有可执行路径。sessiond 再次验证已安装内容后，以已打开的 entry FD 启动应用。
 
 ## 安全边界
@@ -30,10 +32,11 @@
 - 唯一包信任根是编译进二进制的官方发布公钥。
 - 收件箱、应用和策略根路径均不可由调用者指定。
 - installer UI 不打开 root roots、不加载公钥/crypto provider；只有 sessiond broker 执行安全服务。
-- `LVGL_INSTALLER_FD` 只传给固定 built-in installer，协议只有 scan/candidate/install。
+- `LVGL_INSTALLER_FD` 只传给固定 built-in installer，v2 协议只有 inbox scan/candidate/install 与 installed scan/candidate/rollback/remove。
 - 包名、文件名和桌面元数据都不构成授权。
 - `top.lvgl.platform`、`top.lvgl.desktop`、`top.lvgl.installer` 不允许由普通应用包覆盖。
 - 目标设备拿不到有效 registry FD 时仅显示桌面自身，不回退到开发应用列表。
+- rollback/remove 在 UI 强制二次确认；remove 只删除 payload，保留 policy high-water 和 `lvgl-data`。
 
 ## 详细文档
 

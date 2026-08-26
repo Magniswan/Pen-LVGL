@@ -2,6 +2,26 @@
 
 > 最新变更在最上方。
 
+## [2026-08-26] 统一 runtime 的公开 SDK 类型
+
+**类型**: refactor
+**提交**: 14abc6b
+**风险**: MEDIUM
+
+- `RuntimeContext` 现在是公开 `AppContext` 的兼容别名，只暴露 control/storage；内部 headers 仅转发公开声明。
+- 平台与所有应用必须全量重编，public header compile test 防止内部 include 泄漏。
+- 回滚：`git revert 14abc6b`，需同步回滚 SDK、template 与 2048 include。
+
+## [2026-08-26] 在 sessiond 中加入受控应用生命周期事务
+
+**类型**: security
+**提交**: 0c4de06
+**风险**: HIGH
+
+- installer broker 升级至 v2；sessiond 枚举 installed snapshots 并独占 rollback/remove 授权与文件操作。
+- mutation 重算 snapshot token，rollback 复验 previous，remove 原子隔离且保留 policy/data，所有路径写有界 audit。
+- 回滚：`git revert 0c4de06`，必须同步回滚 installer client/UI 与 protocol corpus。
+
 ## [2026-08-24] 接通失败 release 的安全回滚
 
 **类型**: security-fix

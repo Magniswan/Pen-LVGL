@@ -20,7 +20,7 @@
 
 ## P1 — SDK 与应用体验
 
-- 稳定 SDK ABI header/export package，加入 ABI compatibility CI。
+- 为已发布的 SDK `1.0` headers/export component 加入跨版本 ABI compatibility CI 与弃用策略。
 - 为 2048 离屏烟测增加逐帧 motion/reduced-motion golden image regression，并在认证硬件完成手势与帧时间基线。
 - 完成 capability broker（audio/dictionary/haptics/scanner/network）。
 - 增加应用图标/本地化 metadata 的签名格式与 desktop cache。
@@ -30,7 +30,7 @@
 
 - 使用 HSM/硬件 token 的离线 signer、双人审批和透明 audit log。
 - key rotation/recovery drill、security epoch 响应手册和 reproducible release attestations。
-- SBOM、license、CVE scanning、dependency pinning 与长期支持分支。
+- 已生成 SPDX 2.3 SBOM、license notices、构建证据和双摘要；后续增加 CVE scanning、签名 attestation、依赖镜像/来源证明与长期支持分支。
 
 ## 暂缓：在线能力
 

@@ -2,6 +2,29 @@
 
 > 最新变更在最上方。
 
+## [2026-08-26] 固定并校验 Falcon AMR 构建链
+
+**类型**: security
+**提交**: 16d557f
+**风险**: HIGH
+
+### 变更文件
+
+| 文件 | 说明 |
+|---|---|
+| `scripts/falcon_build_common.ps1` | 固定 Node/packager、精确检查 AMR 条目与证书摘要 |
+| `scripts/build_launcher.ps1` | 新增无 ADB 的 launcher native + AMR 统一入口 |
+| `scripts/build_manager.ps1` | manager 改用相同锁定入口并输出 AMR SHA-256 |
+| `launcher/package.json`、`manager/package.json` | 声明精确 Node 18.20.8 |
+| `tests/host/release-source.test.js` | 固化工具链、归档和 no-ADB 约束 |
+
+### 影响范围
+
+- **兼容性**: 其他 Node 版本和全局 CLI 现在失败关闭。
+- **产物**: production `app.js.bin` 与 development `app.js` 分别精确验证。
+- **验证**: launcher production、manager development AMR 已实跑通过；尚未宣称真机认证。
+- **回滚**: `git revert 16d557f` 会恢复工具链漂移与未检查归档，禁止用于正式发布。
+
 ## [2026-08-24] 新增仅官方发布的 Falcon 平台管理器
 
 **类型**: feat  

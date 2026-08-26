@@ -8,9 +8,10 @@
 
 - C/C++：C++17、C11、CMake 3.20+，目标 ABI 为 AArch64/glibc。
 - UI：仓库内 LVGL；目标 DRM 依赖来自 `device-sysroot`。
-- Falcon：Node/pnpm + HaaSUI/Falcon 工具链；原生插件由 ARM GNU Toolchain 11.3 构建。
+- Falcon：精确 Node 18.20.8、`aiot-vue-cli 1.0.32` 与锁定依赖；原生插件由 ARM GNU Toolchain 11.3 构建。
 - 生产构建必须设置 `LVGL_PLATFORM_PRODUCTION_BUILD=ON` 和 64 位小写十六进制 Ed25519 官方公钥；私钥不得进入仓库或设备构建。
 - 常用命令和精确环境见 [配置与构建](docs/config/README.md)。
+- 发布入口固定为 `scripts/stage_platform_release.ps1`、隔离 signer 上的 `scripts/sign_release.ps1`、`scripts/build_launcher.ps1` 与 `scripts/build_manager.ps1`；这些脚本不调用 ADB。
 
 ## 测试环境
 
@@ -84,6 +85,7 @@ official .lvapp -> fixed inbox -> installer ├─ derive read-only desktop regi
 8. 当前目标 profile 未经真机认证，构建成功不能等同于硬件兼容。
 9. AppStorage 只允许使用 SDK broker API；把目录 FD 交给应用会绕过 quota 和记录策略。
 10. parser 修改必须同步运行 contract tests 与对应 fuzz harness；短时无 crash 不能表述为安全证明。
+11. Falcon 生产 AMR 使用 `app.js.bin`，开发 AMR 使用 `app.js`；归档校验器必须按模式精确匹配四个条目，不能接受额外文件。
 
 ## 模块变更日志
 

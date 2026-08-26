@@ -2,6 +2,28 @@
 
 > 最新变更在最上方。
 
+## [2026-08-26] 发布稳定应用 SDK 头与安装组件
+
+**类型**: feat
+**提交**: 14abc6b
+**风险**: MEDIUM
+
+### 变更文件
+
+| 文件 | 说明 |
+|---|---|
+| `sdk/include/lvgl_platform/*.hpp` | 发布 runtime/control/storage/shell/theme 聚合公开面 |
+| `src/runtime/*.h`、`src/shell/*.h` | 改为兼容转发，避免两套声明漂移 |
+| `cmake/LvglApplication.cmake`、`CMakeLists.txt` | 新增 public header target、SDK ABI define 与 `sdk` install component |
+| `tests/host/sdk_public_header_test.cpp` | 从安装者视角编译公开头 |
+| template/2048 | 迁移到公开 SDK include |
+
+### 影响范围
+
+- **源 API**: 以后仅承诺 `sdk/include/lvgl_platform/`。
+- **ABI**: 明确 `1.0` 常量；本次需要应用全量重编。
+- **回滚**: `git revert 14abc6b`，同时回滚应用 include 迁移与 CMake install 规则。
+
 ## [2026-08-24] AppStorage 切换到配额 broker
 
 **类型**: security

@@ -10,3 +10,4 @@
 8. 不要把私钥传给 CMake、manager、设备或 CI 普通构建；签名是隔离的发布步骤。
 9. 私有状态只用 `RuntimeContext.storage` 固定记录；不要解析 `LVGL_APP_STORAGE_FD`、拼接路径或绕过单记录上限。
 10. signed manifest 的 `maxFiles`/`dataMiB` 是总 quota，调用参数 `maximum_size` 是更小的单记录上限；两者都不能把 storage 当大文件仓库。
+11. 不要包含 `src/runtime/*.h`、`src/shell/*.h` 或复制类声明；只用安装出的 `lvgl_platform/*.hpp`，否则内部重构可能造成 ODR/ABI 分裂。

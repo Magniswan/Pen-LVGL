@@ -2,6 +2,24 @@
 
 > 最新变更在最上方。
 
+## [2026-08-26] 新增已安装应用的受验证生命周期控制
+
+**类型**: security
+**提交**: 0c4de06
+**风险**: HIGH
+
+### 安全性质
+
+- installer broker 升级为 `LVINST2`/v2，新增 installed scan/candidate、rollback 和 remove，但仍只有 160/768-byte 闭合 packet。
+- mutation 只接受覆盖目录 identity 与完整 policy state 的 128-hex snapshot token，并在 sessiond 内重新枚举匹配。
+- rollback 重新官方验签 previous 并保留 high-water；remove 原子隔离 payload、有界 no-follow 清理并保留 policy/data。
+- UI 对 rollback/remove 二次确认；root-owned audit 记录 BEGIN/COMMIT/ISOLATED。
+
+### 回滚指南
+
+- 回滚：`git revert 0c4de06`；文档边界提交为 `d780d95`。
+- 副作用：失去手动 rollback/remove，旧 v1 client/server 必须成对回滚，不能混用协议。
+
 ## [2026-08-24] 将安装事务迁入 sessiond typed broker
 
 **类型**: security-fix

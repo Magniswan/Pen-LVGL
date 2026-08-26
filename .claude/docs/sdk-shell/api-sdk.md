@@ -1,16 +1,19 @@
 # SDK API
 
+公开聚合头为 `#include <lvgl_platform/sdk.hpp>`；也可按需包含 `runtime.hpp`、`app_control.hpp`、`app_storage.hpp`、`shell.hpp` 和 `theme.hpp`。禁止依赖 `src/` 内部头。
+
 ## Runtime
 
 | 类型/方法 | 契约 |
 |---|---|
-| `RuntimeContext.metrics` | 只读采样/诊断对象，不作为游戏计时真相 |
 | `RuntimeContext.control` | 当前 session 的类型化导航控制 |
 | `RuntimeContext.storage` | capability-gated app-private 固定记录存储；不可用时 fail closed |
 | `RuntimeApplication::create` | 仅 runtime 初始化后调用一次 |
 | `stop_requested` | 快速、无副作用；每轮主循环调用 |
 | `destroy` | 幂等清理 timers/animations/业务资源 |
 | `run_platform_application` | 进程唯一 runtime 入口 |
+
+`AppContext` 仅含 `AppControl& control` 与 `AppStorage& storage`；`RuntimeContext` 是其兼容别名。ABI 常量为 `sdk_abi_major=1`、`sdk_abi_minor=0`、`sdk_abi="1.0"`。
 
 ## Navigation
 
@@ -23,10 +26,6 @@
 颜色 token：`ink`、`muted`、`canvas`、`surface`、`line`、`accent`、`accent_pressed`、`danger`。布局常量：960×266、gesture 18、panel 82、touch target 44。
 
 `style_screen` 清除滚动和默认边框；`style_button` 统一 radius/pressed；`create_label`/`create_button` 绑定应用字体。
-
-## Metrics
-
-`RuntimeMetrics::snapshot()` 提供 FPS、平均/峰值 frame time、CPU、RSS、frames、input count 和最后 pointer。只在诊断/测试启用周期日志，避免常驻 I/O。
 
 ## Storage
 
@@ -41,3 +40,5 @@
 开发包：`node tools/lvapp/cli.mjs build --manifest app.json --root root --out app.lvapp.dev`。
 
 离线发布：`sign --input ...dev --key <offline PEM> --out app.lvapp`。开发机可 `inspect`；发布验证用 `verify --public-key`。设备端不接受命令行公钥，而使用编译官方根。
+
+SDK 安装：`cmake --install <build> --component sdk --prefix <sdk-prefix>`。应用 CMake 使用安装出的 `LvglApplication.cmake`/`lvgl_add_application`；发布产物仍需与平台同一 ABI、toolchain 和认证目标矩阵构建。

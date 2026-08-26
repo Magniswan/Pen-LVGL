@@ -48,7 +48,7 @@ foreground app
 - 桌面连续失败三次退出到 Falcon；sessiond 不对 built-in desktop/installer 执行应用 rollback。
 - 每个应用映射独立非 root UID/GID；UID 碰撞失败关闭；manifest memory/CPU/files/data limits 映射到 rlimit 与 broker quota。
 - `storage.private` 只传 broker socket，不传目录 FD/path/root/key；sessiond 采用 no-follow、0600、bounded read 和原子替换。
-- `LVGL_INSTALLER_FD` 只传给 fixed built-in installer；sessiond 保留 inbox/official trust/policy/write transaction，child 只能发送 typed token 请求。
+- `LVGL_INSTALLER_FD` 只传给 fixed built-in installer；sessiond 保留 inbox/official trust/policy/write transaction，child 只能发送 v2 typed token 请求。install 绑定包 token，rollback/remove 绑定 installed snapshot token。
 - seccomp 禁止网络 socket、进程派生/exec、mount/ptrace/kill、写路径和 executable mmap；运行期 DRM ioctl 仅 3 项。
 
 ## 详细文档

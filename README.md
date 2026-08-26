@@ -60,6 +60,15 @@ cmake --build build/platform-aarch64 --target \
 
 `.lvapp.dev` 仅用于构建/格式验证。正式发布必须走 [离线发布流程](docs/release/release-process.md)。
 
+固定 Falcon AMR 构建入口（只构建/检查，不连接设备）：
+
+```powershell
+./scripts/build_launcher.ps1 -Production -NodeExecutable <node-18.20.8>
+./scripts/build_manager.ps1 -NodeExecutable <node-18.20.8>
+```
+
+生产 manager 还必须提供官方公钥、正式平台包、认证 profile/machine 与设备 identity；缺任一项即失败关闭。
+
 ## 文档
 
 - [架构总览](docs/architecture/overview.md)

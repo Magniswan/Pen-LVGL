@@ -24,3 +24,11 @@
 `signPackage` 只接受 development 包，把 signer public-key SPKI SHA-256 前 16 bytes 写入 key ID，对 `LVAPP-SIGN-V1 || SHA-512(unsigned-package)` 做 Ed25519 签名，并追加 96-byte envelope。
 
 `verifyPackageFile` 拒绝 development 包，要求显式 Ed25519 公钥，同时验证 key ID、布局、canonical manifest、每文件 hash 和签名。
+
+`key-info --public-key` 只接受 Ed25519 public key，输出算法、16-byte key ID 和 32-byte raw public key hex。offline handoff 用 raw hex 与事先批准的官方信任根做字节级相等比较，不能由待签包或私钥反向选择公钥。
+
+## Release script APIs
+
+- `stage_platform_release.ps1`：输入 production build、认证 profile、输出目录、官方公钥 hex、version/counter/epoch；输出确定性 `.lvapp.dev` 与审计旁证，不接受私钥。
+- `sign_release.ps1`：输入 `.lvapp.dev`、仓库外 private key、public key、批准的 raw public key hex 与 dev SHA-512；输出正式 `.lvapp`、verification/key-info 和双摘要。
+- `build_launcher.ps1` / `build_manager.ps1`：输入精确 Node executable；production manager 额外要求全部 provisioning。输出 AMR path 和 SHA-256，不调用 ADB。

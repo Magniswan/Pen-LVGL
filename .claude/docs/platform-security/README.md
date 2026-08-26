@@ -34,11 +34,14 @@ fixed inbox regular FD
 | `/userdisk/apps/lvgl-platform-policy` | 平台 high-water state | 保留 |
 | `/userdisk/apps/lvgl-apps` | 应用 releases | 独立管理 |
 | `/userdisk/apps/lvgl-app-policy` | 应用 high-water state | 不随载荷清除 |
+| `/userdisk/apps/lvgl-data` | 应用 private records | 不随载荷清除 |
 | `/userdisk/apps/lvgl-inbox` | 只读扫描收件箱 | 文件名不受信任 |
 
 目录必须 root-owned 且 group/other 不可写。所有向下遍历使用目录 FD、`openat` 与 `O_NOFOLLOW`；应用 ID 只经过闭合语法验证后作为单个目录分量。
 
 应用永远拿不到上述 storage 目录 FD。sessiond 通过 canonical broker 协议代理固定 record，并依据已验签 manifest 强制 `maxFiles`/`dataMiB`；任何未知目录项、owner/mode/nlink/type/size 异常都会把存储视为损坏并失败关闭。
+
+手动 rollback/remove 同样由 root sessiond 执行：UI 只提交覆盖 payload directory identity 与完整 policy state 的 SHA-512 snapshot token。rollback 重验 official previous；remove 只隔离/清理 payload，永远保留 policy high-water 和 `lvgl-data`。
 
 ## 对外 API
 

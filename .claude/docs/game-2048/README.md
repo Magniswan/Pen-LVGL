@@ -4,6 +4,8 @@
 
 `apps/game-2048` 是 SDK 参考应用：确定性纯 C++ 模型与 LVGL UI 分离，适配 960×266 横屏，提供滑动、合并计分、胜负、单步撤销、重开确认、reduced-motion 和矿物仪器视觉。
 
+它只包含 `sdk/include/lvgl_platform/*.hpp` 公开面，因此同时充当 SDK `1.0` 的真实消费示例。
+
 ## 依赖
 
 - [SDK / Shell](../sdk-shell/README.md)

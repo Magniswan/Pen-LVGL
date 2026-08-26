@@ -2,6 +2,16 @@
 
 > 最新变更在最上方。
 
+## [2026-08-26] 迁移到公开 SDK 1.0
+
+**类型**: refactor
+**提交**: 14abc6b
+**风险**: LOW
+
+- `main.cpp`、UI 与 persistence 改为只包含 `lvgl_platform/*.hpp`。
+- 模型/存档格式/动画行为未改变；public header compile test 与 AArch64 2048 build 通过。
+- 回滚需与 SDK header 发布一并执行：`git revert 14abc6b`。
+
 ## [2026-08-24] 完成逐 tile 动画与原子恢复
 
 **类型**: feat

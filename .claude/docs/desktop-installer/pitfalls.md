@@ -24,6 +24,10 @@ root 可以替换用户态二进制、内核或内存。没有 Secure Boot/verif
 
 不要加入“忽略签名”“自定义公钥”“自定义目录”或开发模式按钮。开发包只能在独立的开发构建/工具链中使用，生产安装器始终只信任官方密钥。
 
-## 尚未完成
+## 破坏性操作不能只绑定 app ID
 
-卸载、隔离、回滚管理 UI 仍是后续任务；实现时也必须由固定服务完成，不能让 UI 直接删除路径。
+rollback/remove 必须绑定本次枚举得到的完整 snapshot token，并在 broker 内重新枚举；只传 app ID 会让 UI 与磁盘状态之间产生替换窗口。UI 二次确认是防误触，不替代 token、复验与事务。
+
+## remove 不是“恢复出厂”
+
+remove 只隔离并清理 payload，必须保留 anti-rollback policy、private data 和 audit。不要为“卸载干净”删除 high-water；清除 policy/data 应是另一个需要更高授权与产品决策的未来流程。

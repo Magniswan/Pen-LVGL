@@ -2,7 +2,7 @@
 
 ## 当前公开面
 
-后续应用以 `RuntimeApplication` 作为生命周期入口，使用 LVGL 创建界面，以 `AppShell` 获得统一返回/退出面板，以 `AppControl` 请求 HOME。应用不直接操作 session socket、Falcon 或可执行路径。
+后续应用只包含 `sdk/include/lvgl_platform/*.hpp`：以 `RuntimeApplication` 作为生命周期入口，使用 LVGL 创建界面，以 `AppShell` 获得统一返回/退出面板，以 `AppControl` 请求 HOME。`src/runtime/*.h` 与 `src/shell/*.h` 只是兼容转发头，不属于公开面。应用不直接操作 session socket、Falcon 或可执行路径。
 
 ```cpp
 class MyApplication final : public dictpen::RuntimeApplication {
@@ -41,9 +41,10 @@ int main() {
 
 ## 稳定性状态
 
-- 当前 SDK ABI 标识为 `1.0`，manifest 必须精确匹配。
+- 当前 SDK ABI 标识为 `1.0`，manifest 必须精确匹配；头文件同时导出 `sdk_abi_major/minor` 与 `sdk_abi`。
+- CMake 消费目标为 `lvgl_platform::sdk_headers`；安装 `sdk` component 会输出 `include/lvgl_platform/` 和 `lib/cmake/lvgl-platform/LvglApplication.cmake`。
 - `RuntimeApplication`、`RuntimeContext`、`AppControl`、`AppStorage` 和基础 theme 是现有最小接口。
-- `AppStorage` 已通过 root-owned broker 提供有界原子 record API，并强制 signed manifest quota。删除/列举、其他 capability broker、haptics、安全日志、cgroup/namespace 和真机认证仍未完成；应用不得自行发明全局存储路径。
+- `AppStorage` 已通过 root-owned broker 提供有界原子 record API，并强制 signed manifest quota。删除/列举、其他 capability broker、haptics、安全日志、cgroup/namespace 和真机认证仍未完成；这些事项记录在 [ROADMAP](../../../docs/ROADMAP.md)，应用不得自行发明全局存储路径。
 
 ## 详细文档
 

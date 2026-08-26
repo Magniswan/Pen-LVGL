@@ -2,6 +2,26 @@
 
 > 最新变更在最上方。
 
+## [2026-08-26] 固定 Falcon 发布工具链
+
+**类型**: security
+**提交**: 16d557f
+**风险**: MEDIUM
+
+- launcher/manager 均要求 Node 18.20.8 和 `aiot-vue-cli 1.0.32`。
+- native bridge 固定 AArch64 工具链，AMR 按 production/development 模式检查脚本布局。
+- 回滚：`git revert 16d557f`；副作用是失去可复现工具链门禁。
+
+## [2026-08-26] 把认证配置绑定到 release staging
+
+**类型**: security
+**提交**: 381027e
+**风险**: HIGH
+
+- stager 只接受 LF/UTF-8、精确 16 字段、`HOLE_SESSION_CERTIFIED=1` 的 profile，并把原始 `profile.env` 纳入待签平台包。
+- production CMake cache 必须是 Release、production mode 且绑定同一官方 public key。
+- 回滚：`git revert 381027e`；会失去可执行的配置/产物交接门禁。
+
 ## [2026-08-24] 要求认证 overlay session profile
 
 **类型**: feat  

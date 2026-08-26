@@ -52,7 +52,7 @@ cmake -S . -B build-target \
 
 ## Launcher native 编译
 
-`launcher/native/CMakeLists.txt` 要求成对设置 `CROSS_C_COMPILER` + `CROSS_CXX_COMPILER`，或设置 `CROSS_TOOLCHAIN_PREFIX`。`tools/build-native.sh` 默认使用 ARM GNU 11.3。Falcon 使用 QuickJS `20200705` 与 `falcon-ui 1.0.3`。
+`launcher/native/CMakeLists.txt` 要求成对设置 `CROSS_C_COMPILER` + `CROSS_CXX_COMPILER`，或设置 `CROSS_TOOLCHAIN_PREFIX`。`tools/build-native.sh` 默认使用 ARM GNU 11.3。Falcon 使用精确 Node 18.20.8、`aiot-vue-cli 1.0.32`、QuickJS `20200705` 与 `falcon-ui 1.0.3`。统一入口为 `scripts/build_launcher.ps1`；manager 使用 `scripts/build_manager.ps1`。两者构建后都检查 AArch64 bridge 和精确 AMR 内容，不执行 ADB。
 
 ## Device profile
 
@@ -65,3 +65,5 @@ sessiond 不接受未知字段、重复字段、越界矩形或未认证 hole。
 五个设备脚本均要求显式 `-Serial` 和非零 `-ExpectedIdentitySha256`。所有业务命令自动加 `adb -s <serial>`；脚本先确认该 serial 的状态恰为 `device`，再按 manager 的同一字节 framing 复算 identity，任何失败都不进入业务操作。多个设备可以同时连接，因此不再依赖“只连接一个设备”。当前附加 Nexus 4 不在目标范围，禁止对它执行任何设备操作。
 
 identity 为 `SHA-256(machine || NUL || local_packages.json || NUL || cfg.json || NUL)`，文件使用原始字节。它只能防止误选，不能替代官方签名、可信启动或硬件 attestation；生产值必须来自认证记录并与 manager 构建输入一致。
+
+配置变更、风险和回滚记录见 [CHANGELOG.md](CHANGELOG.md)。
