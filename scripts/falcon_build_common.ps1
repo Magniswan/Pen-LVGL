@@ -89,6 +89,63 @@ function Get-FalconArchiveReport {
     }
 }
 
+function ConvertTo-DeterministicFalconArchive {
+    param(
+        [Parameter(Mandatory)][string]$Archive,
+        [Parameter(Mandatory)][string]$ExpectedAppId,
+        [Parameter(Mandatory)][string]$ExpectedVersion,
+        [Parameter(Mandatory)][string]$NativeLibrary,
+        [Parameter(Mandatory)][ValidateSet('app.js', 'app.js.bin')][string]$ScriptEntry
+    )
+    $resolved = [IO.Path]::GetFullPath($Archive)
+    $null = Get-FalconArchiveReport -Archive $resolved -ExpectedAppId $ExpectedAppId `
+        -ExpectedVersion $ExpectedVersion -NativeLibrary $NativeLibrary `
+        -ScriptEntry $ScriptEntry
+    $contents = [ordered]@{}
+    $source = [IO.Compression.ZipFile]::OpenRead($resolved)
+    try {
+        foreach ($entry in ($source.Entries | Sort-Object FullName)) {
+            $memory = [IO.MemoryStream]::new()
+            $stream = $entry.Open()
+            try { $stream.CopyTo($memory); $contents[$entry.FullName] = $memory.ToArray() }
+            finally { $stream.Dispose(); $memory.Dispose() }
+        }
+    } finally {
+        $source.Dispose()
+    }
+    $temporary = "$resolved.canonical-$([guid]::NewGuid().ToString('N'))"
+    try {
+        $file = [IO.File]::Open(
+            $temporary, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+        $target = [IO.Compression.ZipArchive]::new(
+            $file, [IO.Compression.ZipArchiveMode]::Create, $false, [Text.Encoding]::UTF8)
+        try {
+            foreach ($name in $contents.Keys) {
+                $entry = $target.CreateEntry($name, [IO.Compression.CompressionLevel]::Optimal)
+                $entry.LastWriteTime = [DateTimeOffset]::new(
+                    1980, 1, 1, 0, 0, 0, [TimeSpan]::Zero)
+                $entry.ExternalAttributes = 0
+                $stream = $entry.Open()
+                try {
+                    $bytes = [byte[]]$contents[$name]
+                    $stream.Write($bytes, 0, $bytes.Length)
+                } finally { $stream.Dispose() }
+            }
+        } finally {
+            $target.Dispose()
+            $file.Dispose()
+        }
+        $null = Get-FalconArchiveReport -Archive $temporary -ExpectedAppId $ExpectedAppId `
+            -ExpectedVersion $ExpectedVersion -NativeLibrary $NativeLibrary `
+            -ScriptEntry $ScriptEntry
+        [IO.File]::Move($temporary, $resolved, $true)
+    } finally {
+        if (Test-Path -LiteralPath $temporary -PathType Leaf) {
+            Remove-Item -LiteralPath $temporary -Force
+        }
+    }
+}
+
 function Invoke-LockedFalconPackage {
     param(
         [Parameter(Mandatory)][string]$ProjectDirectory,
@@ -135,6 +192,9 @@ function Invoke-LockedFalconPackage {
     $versionToken = ([string]$package.version).Replace('.', '_')
     $archive = Join-Path $project ("$($package.appid).$versionToken.amr")
     $scriptEntry = if ($Production) { 'app.js.bin' } else { 'app.js' }
+    ConvertTo-DeterministicFalconArchive -Archive $archive `
+        -ExpectedAppId ([string]$package.appid) -ExpectedVersion ([string]$package.version) `
+        -NativeLibrary $NativeLibrary -ScriptEntry $scriptEntry
     return Get-FalconArchiveReport -Archive $archive -ExpectedAppId ([string]$package.appid) `
         -ExpectedVersion ([string]$package.version) -NativeLibrary $NativeLibrary `
         -ScriptEntry $scriptEntry

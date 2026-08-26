@@ -76,6 +76,9 @@ test('Falcon release builders pin toolchains and inspect exact AMR contents', ()
   assert.match(common, /ScriptEntry.*app_icon\.png.*NativeLibrary.*manifest\.json/s);
   assert.match(common, /ComputeHash\(\$stream\)/);
   assert.match(common, /Get-FileHash.*SHA256/);
+  assert.match(common, /ConvertTo-DeterministicFalconArchive/);
+  assert.match(common, /1980, 1, 1, 0, 0, 0/);
+  assert.match(common, /Get-FalconArchiveReport[\s\S]*\[IO\.File\]::Move[\s\S]*Get-FalconArchiveReport/);
   assert.match(launcher, /launcher\/tools\/build-native\.sh/);
   assert.match(launcher, /libjsapi_lvgl_launcher\.so/);
   assert.match(manager, /manager\/tools\/build-native\.sh/);
