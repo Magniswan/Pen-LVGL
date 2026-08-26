@@ -47,7 +47,8 @@ function Get-LockedReleaseNode {
 function Convert-ReleaseWslPath {
     param([Parameter(Mandatory)][string]$Path)
     $resolved = [IO.Path]::GetFullPath($Path)
-    $converted = & wsl.exe -d $WslDistribution -- bash -lc 'wslpath -a "$1"' _ $resolved
+    $portable = $resolved.Replace('\', '/')
+    $converted = & wsl.exe -d $WslDistribution -- wslpath -a $portable
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($converted)) {
         throw "Unable to convert release path for WSL: $resolved"
     }
@@ -57,10 +58,11 @@ function Convert-ReleaseWslPath {
 function Get-ReleaseWslToolSize {
     param([Parameter(Mandatory)][string]$Path)
     if ($Path -notmatch '^/[^\r\n]+$') { throw "Release build tool path must be absolute" }
-    $sizeText = & wsl.exe -d $WslDistribution -- bash -lc `
-        'if [ -f "$1" ] && [ ! -L "$1" ]; then stat -c %s -- "$1"; else exit 1; fi' _ $Path
+    $details = & wsl.exe -d $WslDistribution -- stat -c '%F:%s' -- $Path
     [long]$size = 0
-    if ($LASTEXITCODE -ne 0 -or -not [long]::TryParse($sizeText.Trim(), [ref]$size) -or
+    $match = [regex]::Match([string]$details, '^regular file:(\d+)$')
+    if ($LASTEXITCODE -ne 0 -or -not $match.Success -or
+        -not [long]::TryParse($match.Groups[1].Value, [ref]$size) -or
         $size -le 0 -or $size -gt 64MB) {
         throw "Release build tool must be a bounded regular non-link file: $Path"
     }

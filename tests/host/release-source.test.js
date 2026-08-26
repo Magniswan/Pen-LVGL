@@ -18,6 +18,7 @@ test('platform staging accepts only clean certified production inputs', () => {
   assert.match(source, /exactly CMake 3\.31\.6 and Ninja 1\.12\.1/);
   assert.match(source, /wsl\.exe -d \$WslDistribution -- \$buildTooling\.CMake/);
   assert.match(source, /wslpath -a/);
+  assert.doesNotMatch(source, /bash -lc.*wslpath/);
   assert.match(source, /--clean-first --target[\s\S]*lvgl_sessiond[\s\S]*game_2048/);
   assert.match(source, /Source changed during the clean production rebuild/);
   assert.match(source, /exactly Node v18\.20\.8/);
@@ -79,6 +80,7 @@ test('Falcon release builders pin toolchains and inspect exact AMR contents', ()
   assert.match(launcher, /libjsapi_lvgl_launcher\.so/);
   assert.match(manager, /manager\/tools\/build-native\.sh/);
   assert.match(manager, /libjsapi_lvgl_manager\.so/);
+  assert.doesNotMatch(`${launcher}\n${manager}`, /bash -lc.*wslpath/);
   assert.doesNotMatch(`${common}\n${launcher}\n${manager}`, /adb(?:\.exe)?\b/i);
 });
 

@@ -14,7 +14,7 @@ $lockedNode = Get-LockedFalconNode -NodeExecutable $NodeExecutable
 function Convert-LauncherWslPath {
     param([Parameter(Mandatory)][string]$Path)
     $resolved = [IO.Path]::GetFullPath($Path)
-    $converted = & wsl.exe -d $WslDistribution -- bash -lc 'wslpath -a "$1"' _ $resolved
+    $converted = & wsl.exe -d $WslDistribution -- wslpath -a $resolved.Replace('\', '/')
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($converted)) {
         throw "Unable to convert path for WSL: $resolved"
     }
