@@ -37,7 +37,7 @@ manager 的 install/repair/upgrade 都复用同一官方验签与事务安装路
 ./scripts/build_manager.ps1 -NodeExecutable <node-18.20.8>
 ```
 
-Manager 生产构建还必须给齐官方公钥、已签平台包、认证 profile/machine 与设备 identity。共同构建器直接调用项目内锁定的 CLI，不依赖全局 `corepack`/`pnpm`；构建后精确核对 AMR 的四个条目、manifest/QuickJS 身份、script/native MD5、大小与外层 SHA-256。两个入口均不连接设备。
+Manager 生产构建还必须给齐官方公钥、已签平台包、认证 profile/machine 与设备 identity。共同构建器直接调用项目内锁定的 CLI，不依赖全局 `corepack`/`pnpm`；构建后精确核对 AMR 的四个条目、manifest/QuickJS 身份、script/native MD5 与大小，再用固定条目顺序和 1980 UTC ZIP 时间规范化、二次验包并输出外层 SHA-256。两个入口均不连接设备。
 
 ## 详细文档
 

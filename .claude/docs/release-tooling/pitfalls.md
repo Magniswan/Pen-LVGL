@@ -24,6 +24,8 @@ dev 包故意无签名且 signing key ID 为零，设备端永远拒绝。扩展
 
 `stage_platform_release.ps1` 故意没有私钥参数；它会验证 CMake home 并 clean rebuild，防止把旧 build 目录伪装为当前 commit。`sign_release.ps1` 要求 reviewer 指定的 clean source commit、私钥位于仓库外，并把待签 SHA-512 与事先批准值绑定。不要合并这两个角色、从待签包自动接受 key、覆盖已有输出，或把 signer 私钥放进 CI secret。
 
+stager 必须使用 cache 中的绝对 WSL CMake/Ninja，并验证精确版本与普通非链接文件。不要假设 WSL 登录 PATH，也不要让 Windows CMake 重配置 Linux cache；Windows 路径经直接 `wslpath` 转换，不能通过会吞位置参数的 shell 包装。
+
 ## clean Git 不等于可复现证明
 
 stager 从当前 clean source 强制 clean rebuild，并将 commit/timestamp 和构建证据绑定到输出；正式门禁仍要两个独立环境的 clean build 逐字节比较。SBOM/notices 也不等于 CVE 扫描、来源 attestation 或 license 法律审查；这些后续项保留在 ROADMAP。
@@ -31,3 +33,5 @@ stager 从当前 clean source 强制 clean rebuild，并将 commit/timestamp 和
 ## AMR 内层 MD5 不是平台信任根
 
 Falcon manifest 的 size/MD5 用于发现归档损坏和工具链漂移；官方 LVGL 平台/应用授权仍由 Ed25519 `.lvapp`、嵌入公钥和设备侧复验完成。不能把 AMR MD5 描述为抗 root 签名。
+
+AMR 外层 ZIP 需固定条目顺序和时间后再次验包，才能使用 SHA-256 作为可复现发布标识。该外层 hash 仍不是官方 `.lvapp` 签名，也不替代 Falcon 平台自身可能要求的发布认证。

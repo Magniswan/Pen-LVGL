@@ -2,6 +2,28 @@
 
 > 最新变更在最上方。
 
+## [2026-08-26] 使 Falcon AMR 外层可复现
+
+**类型**: reproducibility-fix
+**提交**: b94b196
+**风险**: MEDIUM
+
+- 原 Falcon CLI ZIP timestamps 被规范化为固定时间/顺序，规范化前后均执行精确 AMR 校验。
+- Launcher production 两次从头构建外层 SHA-256 一致；Manager development 模式通过同一路径。
+- 回滚：`git revert b94b196` 会恢复外层 hash 漂移。
+
+## [2026-08-26] 固定 WSL release 工具与路径
+
+**类型**: build-security-fix
+**提交**: 76bb7f2
+**风险**: HIGH
+
+- 相关提交：`ae913ae`、`d56fb85`、`15af7ca`、`76bb7f2`。
+- 修复 reserved `$HOME` 冲突、WSL cache 路径比较、非登录 PATH 与丢失 `$1` 的 shell 参数传递。
+- stager 从 cache 取得并验证普通非链接的 CMake 3.31.6/Ninja 1.12.1，直接在指定 WSL 中 clean rebuild。
+- 三次完整 staging 产物一致；最终 evidence 绑定代码提交 `b94b196`。
+- 回滚这些提交会破坏 source-bound staging，禁止用于发布。
+
 ## [2026-08-26] 将发布产物绑定到 reviewer-approved source
 
 **类型**: security-fix

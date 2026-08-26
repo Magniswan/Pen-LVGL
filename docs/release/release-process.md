@@ -34,7 +34,8 @@ Builder 在 clean worktree、production AArch64 Release build 和已认证 `prof
   -OfficialPublicKeyHex <approved-32-byte-public-key-hex> `
   -Version <semver> `
   -ReleaseCounter <monotonic-counter> `
-  -SecurityEpoch <epoch>
+  -SecurityEpoch <epoch> `
+  -WslDistribution <approved-wsl-name>
 ```
 
 Reviewer 检查 source commit、manifest/profile、ELF evidence、SPDX/notices、inspection 和测试记录，并通过独立渠道批准 `top.lvgl.platform.lvapp.dev` 的 SHA-512。隔离 signer 只接受这一个 digest：
@@ -50,14 +51,14 @@ Reviewer 检查 source commit、manifest/profile、ELF evidence、SPDX/notices�
   -OutputDirectory <new-signer-output-directory>
 ```
 
-stager 会核对 CMake home 并从当前 clean source `--clean-first` 重建目标，构建后 source 有变化也会拒绝。两个脚本均要求 Node 18.20.8。signer 另拒绝非 reviewer-approved/dirty source commit、测试/全零公钥、仓库内私钥、digest/key 不匹配、链接输入与覆盖已有输出。signer 输出仍由 publisher 在另一个 public-key 环境复验。
+stager 会核对 CMake home，从 cache 锁定 CMake 3.31.6/Ninja 1.12.1，并在指定 WSL 中从当前 clean source `--clean-first` 重建目标；构建后 source 有变化也会拒绝。两个脚本均要求 Node 18.20.8。signer 另拒绝非 reviewer-approved/dirty source commit、测试/全零公钥、仓库内私钥、digest/key 不匹配、链接输入与覆盖已有输出。signer 输出仍由 publisher 在另一个 public-key 环境复验。
 
 ## Platform/manager release
 
 1. 真机认证 `profile.env`，记录 connector/CRTC/overlay/rotation/touch evidence。
 2. 以 `top.lvgl.platform` manifest 打包完整 platform release 并离线签名。
 3. 用 production 参数构建 manager native plugin，嵌入同一 signed platform bytes、official public key、profile/machine 和 device identity digest。
-4. 用精确 Node 18.20.8 运行 `scripts/build_manager.ps1 -Production` 与 `scripts/build_launcher.ps1 -Production`；两者检查 `aiot-vue-cli 1.0.32`、AArch64 bridge、AMR 精确条目/manifest cert 并记录 SHA-256。
+4. 用精确 Node 18.20.8 运行 `scripts/build_manager.ps1 -Production` 与 `scripts/build_launcher.ps1 -Production`；两者检查 `aiot-vue-cli 1.0.32`、AArch64 bridge、AMR 精确条目/manifest cert，规范化 ZIP metadata、再次验包并记录可复现 SHA-256。
 5. 在隔离的认证测试笔上执行 install/repair/upgrade/remove/crash/reboot/tamper/rollback matrix。
 6. 只有全门禁通过才发布 AMR；launcher 与 manager AppID 固定且相互独立。
 

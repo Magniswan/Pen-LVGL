@@ -54,6 +54,8 @@ cmake -S . -B build-target \
 
 `launcher/native/CMakeLists.txt` 要求成对设置 `CROSS_C_COMPILER` + `CROSS_CXX_COMPILER`，或设置 `CROSS_TOOLCHAIN_PREFIX`。`tools/build-native.sh` 默认使用 ARM GNU 11.3。Falcon 使用精确 Node 18.20.8、`aiot-vue-cli 1.0.32`、QuickJS `20200705` 与 `falcon-ui 1.0.3`。统一入口为 `scripts/build_launcher.ps1`；manager 使用 `scripts/build_manager.ps1`。两者构建后都检查 AArch64 bridge 和精确 AMR 内容，不执行 ADB。
 
+平台 release staging 复用 Linux build cache 中的绝对工具路径，并要求 CMake 3.31.6、Ninja 1.12.1；`-WslDistribution` 默认 `Ubuntu`。Windows 路径通过直接 `wslpath` 转换，cache 的 `CMAKE_HOME_DIRECTORY` 必须与当前仓库的 WSL 路径字节一致。
+
 ## Device profile
 
 当前 `youdao-y01-4.8.6` 为 legacy POC evidence，`holeSessionCertified=false`。它不能作为商用认证。生产 `profile.env` 必须处于官方签名平台包中，至少覆盖 profile/machine、logical size、DRM connector/CRTC/overlay、display rectangle/rotation、pixel format 与 `HOLE_SESSION_CERTIFIED=1`。

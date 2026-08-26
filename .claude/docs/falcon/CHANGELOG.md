@@ -2,6 +2,27 @@
 
 > 最新变更在最上方。
 
+## [2026-08-26] 规范化 Falcon AMR 外层归档
+
+**类型**: reproducibility-fix
+**提交**: b94b196
+**风险**: MEDIUM
+
+- Falcon CLI 原始 AMR 的内部四条目一致，但 ZIP timestamps 使外层 hash 漂移。
+- 共同构建器现在先验包，以固定顺序/1980 UTC 时间重封装，再次验包后原子替换。
+- Launcher production 两次完整构建得到同一 SHA-256 `668e3e3cd6e6c1fe44f8ae754fbcb8c43642ffd89a396e977aa65e8dc91ad1f7`；Manager development 布局也通过。
+- 回滚：`git revert b94b196` 会恢复 AMR 外层不可复现，但不改变内部 manifest cert。
+
+## [2026-08-26] 修正 Windows→WSL 路径传递
+
+**类型**: build-fix
+**提交**: 76bb7f2
+**风险**: HIGH
+
+- launcher/manager 改为直接调用 `wslpath`；不再依赖当前环境会丢失 `$1` 的 `bash -lc` 位置参数。
+- 两个入口已从仓库外工作目录实跑通过。
+- 回滚：`git revert 76bb7f2` 会重新引入 CWD-dependent 错路径风险。
+
 ## [2026-08-26] 固定并校验 Falcon AMR 构建链
 
 **类型**: security

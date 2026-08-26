@@ -2,6 +2,16 @@
 
 > 最新变更在最上方。
 
+## [2026-08-26] 固定 WSL release build 工具与路径
+
+**类型**: build-security-fix
+**提交**: 76bb7f2
+**风险**: HIGH
+
+- stager 使用 cache 的 CMake 3.31.6/Ninja 1.12.1，在指定 WSL 中直接调用；路径通过 direct `wslpath` 转换。
+- 修复非登录 PATH、reserved variable 与 shell 丢失位置参数造成的错误归属/失败。
+- 回滚相关提交 `ae913ae..76bb7f2` 会使 source-bound clean rebuild 不可靠。
+
 ## [2026-08-26] 验证 production build cache 的 source 归属
 
 **类型**: security-fix
