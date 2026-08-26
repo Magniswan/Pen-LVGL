@@ -1,7 +1,6 @@
 #include "game_2048_ui.h"
 
-#include "runtime/platform_runtime.h"
-#include "shell/app_shell.h"
+#include <lvgl_platform/sdk.hpp>
 
 #include <chrono>
 #include <memory>

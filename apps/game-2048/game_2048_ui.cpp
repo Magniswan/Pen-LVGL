@@ -2,8 +2,8 @@
 
 #include "game_2048_persistence.h"
 
-#include "runtime/app_storage.h"
-#include "shell/app_theme.h"
+#include <lvgl_platform/app_storage.hpp>
+#include <lvgl_platform/theme.hpp>
 
 #include <algorithm>
 #include <cmath>

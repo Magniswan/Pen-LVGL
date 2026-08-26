@@ -65,6 +65,14 @@ set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(CONFIG_LV_USE_THORVG_INTERNAL OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/lvgl EXCLUDE_FROM_ALL)
 
+add_library(lvgl_sdk_headers INTERFACE)
+add_library(lvgl_platform::sdk_headers ALIAS lvgl_sdk_headers)
+target_include_directories(lvgl_sdk_headers INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/include>
+    $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(lvgl_sdk_headers INTERFACE lvgl::lvgl)
+
 add_library(lvgl_platform_contract STATIC
     platform/src/crypto/crypto_provider.cpp
     platform/src/ipc/installer_protocol.cpp
@@ -118,6 +126,19 @@ if(LVGL_BUILD_FUZZERS)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(lvgl_sdk_public_header_tests
+        tests/host/sdk_public_header_test.cpp
+    )
+    target_link_libraries(lvgl_sdk_public_header_tests PRIVATE lvgl_sdk_headers)
+    if(MSVC)
+        target_compile_options(lvgl_sdk_public_header_tests PRIVATE /W4 /WX)
+    else()
+        target_compile_options(lvgl_sdk_public_header_tests PRIVATE
+            -Wall -Wextra -Wpedantic -Werror
+        )
+    endif()
+    add_test(NAME lvgl_sdk_public_header_tests COMMAND lvgl_sdk_public_header_tests)
+
     add_executable(lvgl_platform_contract_tests
         tests/host/platform_contract_test.cpp
     )
@@ -147,7 +168,10 @@ if(BUILD_TESTING)
         tests/host/game_2048_model_test.cpp
     )
     target_include_directories(game_2048_model_tests PRIVATE apps/game-2048 src)
-    target_link_libraries(game_2048_model_tests PRIVATE lvgl_platform_contract)
+    target_link_libraries(game_2048_model_tests PRIVATE
+        lvgl_platform_contract
+        lvgl_sdk_headers
+    )
     if(MSVC)
         target_compile_options(game_2048_model_tests PRIVATE /W4 /WX)
     else()
@@ -167,7 +191,11 @@ if(BUILD_TESTING)
         tests/host/game_2048_visual_test.cpp
     )
     target_include_directories(game_2048_visual_test PRIVATE src apps/game-2048)
-    target_link_libraries(game_2048_visual_test PRIVATE lvgl::lvgl lvgl_platform_contract)
+    target_link_libraries(game_2048_visual_test PRIVATE
+        lvgl::lvgl
+        lvgl_platform_contract
+        lvgl_sdk_headers
+    )
     if(MSVC)
         target_compile_options(game_2048_visual_test PRIVATE /W4 /WX /utf-8 /wd4996)
     else()
@@ -217,7 +245,11 @@ add_library(app_control STATIC
     src/runtime/installer_client.cpp
 )
 target_include_directories(app_control PUBLIC src)
-target_link_libraries(app_control PUBLIC session_protocol lvgl_platform_contract)
+target_link_libraries(app_control PUBLIC
+    session_protocol
+    lvgl_platform_contract
+    lvgl_sdk_headers
+)
 if(MSVC)
     target_compile_options(app_control PRIVATE /W4 /WX)
 else()
@@ -230,7 +262,7 @@ add_library(app_shell STATIC
     src/assets/lv_font_app_16.c
 )
 target_include_directories(app_shell PUBLIC src)
-target_link_libraries(app_shell PUBLIC app_control lvgl::lvgl)
+target_link_libraries(app_shell PUBLIC app_control lvgl::lvgl lvgl_sdk_headers)
 if(MSVC)
     target_compile_options(app_shell PRIVATE /W4 /WX /utf-8 /wd4996)
 else()
@@ -322,6 +354,7 @@ if(EXISTS "${DEVICE_LIBDRM_PATH}")
         lvgl::lvgl
         app_control
         lvgl_platform_contract
+        lvgl_sdk_headers
     )
     target_compile_options(platform_runtime PRIVATE
         -Wall -Wextra -Wpedantic -Werror -Wno-pedantic
@@ -408,3 +441,9 @@ if(EXISTS "${DEVICE_LIBDRM_PATH}")
         RUNTIME DESTINATION bin
     )
 endif()
+
+install(DIRECTORY sdk/include/ DESTINATION include COMPONENT sdk)
+install(FILES cmake/LvglApplication.cmake
+    DESTINATION lib/cmake/lvgl-platform
+    COMPONENT sdk
+)

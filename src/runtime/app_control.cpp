@@ -51,15 +51,6 @@ bool AppControl::available() const
     return fd_ >= 0 || session_fd_ >= 0;
 }
 
-bool AppControl::launch(AppId app_id) const
-{
-    if(session_fd_ >= 0) {
-        const auto* app = find_app(app_id);
-        return app != nullptr && launch(app->stable_id);
-    }
-    return send_session_message(fd_, SessionCommand::launch, app_id);
-}
-
 bool AppControl::launch(std::string_view app_id) const
 {
     return session_fd_ >= 0 && lvgl_platform::valid_session_app_id(app_id) &&

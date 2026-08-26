@@ -1,6 +1,4 @@
-#include "runtime/platform_runtime.h"
-#include "shell/app_shell.h"
-#include "shell/app_theme.h"
+#include <lvgl_platform/sdk.hpp>
 
 #include <lvgl.h>
 

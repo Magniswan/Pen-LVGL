@@ -1,6 +1,6 @@
 #include "game_2048_persistence.h"
 
-#include "runtime/app_storage.h"
+#include <lvgl_platform/app_storage.hpp>
 
 #include <algorithm>
 #include <cstring>

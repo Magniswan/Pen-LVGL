@@ -206,7 +206,7 @@ int run_platform_application(RuntimeApplication& application,
     lv_indev_set_user_data(input_device, &input_context);
     lv_indev_set_read_cb(input_device, input_read);
 
-    RuntimeContext runtime_context {metrics, control, storage};
+    RuntimeContext runtime_context {control, storage};
     application.create(runtime_context);
 
     std::cout << "RUNTIME start app=" << options.app_id << " profile=" << profile.id
