@@ -38,7 +38,9 @@ Application roots：
 
 policy root 与可移除 payload 分开，避免卸载等价于清空 release/security high-water。release 安装在隔离 staging 中完成，fsync 后提交 state；平台再原子切换 `current`。
 
-安装器 child 与普通应用一样是非 root 且受 seccomp 限制，不能直接打开上述 root-owned roots。只有固定 `top.lvgl.installer` 获得 160/768-byte `SOCK_SEQPACKET` endpoint；sessiond 端接受 `scan`、`candidate(index)`、`install(SHA-512 token)`，重新扫描/验签/检查策略后才执行写事务。协议不含路径、公钥、manifest 或 shell 字段。
+安装器 child 与普通应用一样是非 root 且受 seccomp 限制，不能直接打开上述 root-owned roots。只有固定 `top.lvgl.installer` 获得 160/768-byte `SOCK_SEQPACKET` endpoint；sessiond 端接受 inbox scan/candidate/install 与 installed scan/candidate/rollback/remove。所有变更命令只携带 128 个小写十六进制字符的 SHA-512 快照 token；broker 重新枚举、复验并匹配 token 后才操作自身解析出的 canonical app ID，协议不含路径、公钥、manifest 或 shell 字段。
+
+手动 rollback 必须完整复验 previous 的官方签名、包摘要、逐文件内容和当前 profile/policy，随后写双槽 state；原 current 进入 quarantine，high-water 不下降，且手动操作不会伪造 launch-failure 计数。remove 先把唯一 app payload 目录原子重命名为随机 tombstone，再执行 no-follow、同设备、最大 128 层/8192 节点的有界清理（覆盖格式允许的最深 240-byte canonical path）；中断后由下次生命周期请求继续清理。policy 与 `lvgl-data` 从不进入删除根。每次破坏性操作在独立 0700 audit 目录写入有界 0600 BEGIN/COMMIT（或 ISOLATED）记录。
 
 ## Application launch
 
@@ -70,7 +72,7 @@ DRM runtime 只使用 signed profile 中已认证的 connector/CRTC/overlay/rect
 - session control：128-byte little-endian v1
 - touch protocol：56-byte little-endian v1
 - storage broker：96-byte header / `LVSTOR1` / v1
-- installer broker：160-byte request / 768-byte response / `LVINST1` / v1
+- installer broker：160-byte request / 768-byte response / `LVINST2` / v2
 - application identity：小写 canonical reverse-domain ID
 
 不兼容变化必须提升对应 version/ABI/format，而不是静默复用旧值。

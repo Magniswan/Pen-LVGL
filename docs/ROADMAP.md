@@ -7,7 +7,6 @@
 - 在认证目标内核上增加并验证 cgroup v2 CPU/memory 与只读 mount namespace；不支持所需内核能力时保持失败关闭。
 - 对 AArch64 seccomp 白名单做目标固件 syscall capture、负向逃逸测试和独立审计；当前实现已强制 UID/GID、rlimit、no-new-privs 与 seccomp，但尚无真机证据。
 - 为 storage broker 增加断电/磁盘满/并发恶意请求集成测试；当前已强制 manifest 的 `maxFiles`/`dataMiB` quota。
-- 在现有 sessiond typed installer broker 上增加手动应用卸载/隔离/rollback 命令与二次确认 UI、持久审计记录。自动失败回滚已实现为“previous 完整复验 → 双槽 policy 提交 → current quarantine/high-water 保留”；当前 UI broker 仍只开放 scan/candidate/install。
 - 把现有 ADB `-Serial` + identity digest 防误操作门禁升级为“官方签名的 release authorization”；当前显式 digest 尚不是硬件 attestation，也不能抵御能伪造 ADB 响应的 root 对手。
 - 运行并持续运营新增的 package/state/session libFuzzer + ASan/UBSan CI：首次远端 workflow 尚待执行；后续加入长期 corpus、覆盖率阈值、定期长跑、crash 去重和修复 SLA。
 - 平台/app release 安装与启动路径完成独立安全审计。
@@ -36,3 +35,9 @@
 ## 暂缓：在线能力
 
 按当前需求，v1 保持完全离线。后续可能加入 entitlement、在线吊销、透明日志和更新元数据，但现在不实现。任何在线授权都只能增加约束，不能替代官方包签名、设备本地验签和 anti-rollback。
+
+## 已落地但仍待硬件验证
+
+- installer broker v2 已提供已安装枚举、手动 rollback 和 payload remove；UI 对两项破坏性操作强制二次确认。
+- rollback 会重验 official previous、隔离 current、保留 high-water；remove 使用随机 tombstone 与有界 no-follow 清理，只保留 policy/data。
+- BEGIN/COMMIT/ISOLATED 审计记录已持久化且有大小上限；真实性仍依赖后续可信启动、TEE 或远端透明日志。

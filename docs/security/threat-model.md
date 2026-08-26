@@ -18,7 +18,9 @@
 | 利用 broad process kill | 只监督 exact child PID；源码测试禁止 broad kill |
 | 路径注入/链接替换/配额绕过应用状态 | 应用只持有 broker socket；sessiond 保持 0700 dirfd，闭合 record、`O_NOFOLLOW`、0600/nlink/type/bounds、manifest quota 与原子替换 |
 | 恶意签名应用横向移动 | UID/GID 独立且碰撞拒绝；rlimit；不可 dump；AArch64 seccomp 禁止网络/派生/挂载/写路径/exec，并限制 DRM ioctl |
-| 非 root installer 绕过签名或写 root roots | admin FD 只给固定 built-in installer；closed scan/candidate/install 协议；sessiond 独立重扫、官方验签、策略和事务提交 |
+| 非 root installer 绕过签名或写 root roots | admin FD 只给固定 built-in installer；closed v2 协议只接受 index/opaque snapshot token；sessiond 独立重扫、官方验签、策略和事务提交 |
+| UI 伪造卸载/回滚目标或重放旧选择 | 请求不含 app ID/路径；token 绑定 broker 枚举的 inode/ctime 与完整 release-state 快照；每次操作重新枚举并在提交前再比对，旧 token 失败关闭 |
+| 卸载越界、链接穿越或中途断电 | payload 与 policy/data 分根；先 rename 隔离；`O_NOFOLLOW`/dirfd/owner/mode/同设备检查；128 层/8192 节点上限；下次请求恢复 tombstone 清理 |
 | 操作员误选 ADB 设备 | 每个 host 入口都要求精确 serial，并在任何业务操作前复算与 manager 相同的 identity digest |
 | 恶意 parser 输入触发内存错误/UB | package/state/session coverage-guided harness；CI 使用 ASan/UBSan、输入长度/时间/RSS 限制并保存 crash artifact |
 | patch 普通用户态文件 | owner/mode/hash/signature 检查，失败关闭 |
@@ -53,5 +55,6 @@ root 可改内核、`ptrace`/写内存、替换动态链接器、拦截系统调
 - Y01 hole/overlay profile 尚未真机认证。
 - ADB scripts 已强制精确 serial + identity digest，但 digest 仍由操作员提供；尚未由官方签名 release authorization 绑定，也不是硬件 attestation。能控制设备 root/ADB 响应的对手可伪造它，生产安全仍依赖 manager 内嵌 identity、官方包签名及可信启动链。
 - storage broker 已强制 quota 与原子记录，但断电、磁盘满和恶意并发的目标端集成矩阵尚未完成。
+- lifecycle audit 是 root-owned、有界、持久的本地记录，但在没有 secure boot/TEE/远端透明日志时仍可被已控制 root 篡改；同设备 bind mount 与并发 root namespace 攻击也必须由认证的只读 mount namespace 关闭。
 - fuzz/sanitizer workflow 已配置但尚未获得首次远端运行证据；30 秒 smoke 不能替代长期 corpus、覆盖率度量或独立审计。
 - 在线 entitlement/revocation 属于后续阶段；offline v1 不依赖网络。
