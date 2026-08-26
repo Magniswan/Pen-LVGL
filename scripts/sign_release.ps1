@@ -5,6 +5,7 @@ param(
     [Parameter(Mandatory)][string]$PublicKey,
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedPublicKeyHex,
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{128}$')][string]$ExpectedDevelopmentSha512,
+    [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$ExpectedSourceCommit,
     [Parameter(Mandatory)][string]$OutputDirectory,
     [string]$Node = "node"
 )
@@ -36,9 +37,30 @@ function Test-SignerPathWithin {
         $parentPrefix, [StringComparison]::OrdinalIgnoreCase)
 }
 
+function Get-LockedSignerNode {
+    param([Parameter(Mandatory)][string]$Executable)
+    $command = Get-Command $Executable -CommandType Application -ErrorAction Stop
+    $resolved = [IO.Path]::GetFullPath($command.Source)
+    $item = Get-Item -LiteralPath $resolved -Force
+    if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "Signer Node executable must be a regular non-link file"
+    }
+    $version = (& $resolved --version).Trim()
+    if ($LASTEXITCODE -ne 0 -or $version -cne 'v18.20.8') {
+        throw "Signer tooling requires exactly Node v18.20.8; observed $version"
+    }
+    return [pscustomobject]@{ Path = $resolved; Version = $version }
+}
+
 if ($ExpectedPublicKeyHex -eq ('0' * 64) -or $ExpectedPublicKeyHex -eq $SignerForbiddenTestKey) {
     throw "The all-zero and RFC 8032 test public keys are forbidden"
 }
+$signerStatus = @(& git -C $SignerRepository status --porcelain=v1 --untracked-files=all)
+$signerCommit = (& git -C $SignerRepository rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $signerStatus.Count -ne 0 -or $signerCommit -cne $ExpectedSourceCommit) {
+    throw "Offline signer requires the exact reviewed clean source commit"
+}
+$signerNode = Get-LockedSignerNode -Executable $Node
 if (-not $SignerDevelopment.EndsWith('.lvapp.dev', [StringComparison]::Ordinal)) {
     throw "Signer input must be an explicit .lvapp.dev artifact"
 }
@@ -64,7 +86,7 @@ if ($parentItem.Attributes -band [IO.FileAttributes]::ReparsePoint) {
     throw "Signer output parent must not be a reparse point"
 }
 
-$keyInfoText = @(& $Node (Join-Path $SignerRepository 'tools/lvapp/cli.mjs') key-info `
+$keyInfoText = @(& $signerNode.Path (Join-Path $SignerRepository 'tools/lvapp/cli.mjs') key-info `
     --public-key $SignerPublic)
 if ($LASTEXITCODE -ne 0) { throw "Official public key inspection failed" }
 $keyInfo = ($keyInfoText -join "`n") | ConvertFrom-Json
@@ -81,10 +103,10 @@ try {
     $leaf = [IO.Path]::GetFileName($SignerDevelopment)
     $signedLeaf = $leaf.Substring(0, $leaf.Length - 4)
     $signedPackage = Join-Path $artifact $signedLeaf
-    $null = @(& $Node (Join-Path $SignerRepository 'tools/lvapp/cli.mjs') sign `
+    $null = @(& $signerNode.Path (Join-Path $SignerRepository 'tools/lvapp/cli.mjs') sign `
         --input $SignerDevelopment --key $SignerPrivate --out $signedPackage)
     if ($LASTEXITCODE -ne 0) { throw "Offline Ed25519 signing failed" }
-    $verificationText = @(& $Node (Join-Path $SignerRepository 'tools/lvapp/cli.mjs') verify `
+    $verificationText = @(& $signerNode.Path (Join-Path $SignerRepository 'tools/lvapp/cli.mjs') verify `
         --input $signedPackage --public-key $SignerPublic)
     if ($LASTEXITCODE -ne 0) { throw "Independent public-key verification failed" }
     $verification = ($verificationText -join "`n") | ConvertFrom-Json
@@ -96,6 +118,14 @@ try {
         [Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllLines((Join-Path $artifact 'key-info.json'), $keyInfoText,
         [Text.UTF8Encoding]::new($false))
+    $sourceEvidence = [ordered]@{
+        schemaVersion = 1
+        sourceCommit = $signerCommit
+        nodeVersion = $signerNode.Version
+        approvedDevelopmentSha512 = $ExpectedDevelopmentSha512
+    }
+    [IO.File]::WriteAllText((Join-Path $artifact 'source-evidence.json'),
+        ($sourceEvidence | ConvertTo-Json -Depth 4) + "`n", [Text.UTF8Encoding]::new($false))
     $sha256 = (Get-FileHash -LiteralPath $signedPackage -Algorithm SHA256).Hash.ToLowerInvariant()
     $sha512 = (Get-FileHash -LiteralPath $signedPackage -Algorithm SHA512).Hash.ToLowerInvariant()
     [IO.File]::WriteAllText((Join-Path $artifact 'checksums.txt'),

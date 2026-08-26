@@ -11,6 +11,11 @@ test('platform staging accepts only clean certified production inputs', () => {
   assert.match(source, /status --porcelain=v1 --untracked-files=all/);
   assert.match(source, /LVGL_PLATFORM_PRODUCTION_BUILD:BOOL=ON/);
   assert.match(source, /LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX:STRING=/);
+  assert.match(source, /CMAKE_HOME_DIRECTORY:INTERNAL/);
+  assert.match(source, /cmake -S \$ReleaseRepository -B \$ReleaseBuild/);
+  assert.match(source, /--clean-first --target[\s\S]*lvgl_sessiond[\s\S]*game_2048/);
+  assert.match(source, /Source changed during the clean production rebuild/);
+  assert.match(source, /exactly Node v18\.20\.8/);
   assert.match(source, /HOLE_SESSION_CERTIFIED.*-ne '1'/s);
   assert.match(source, /ELF64 little-endian AArch64/);
   assert.match(source, /ReparsePoint/);
@@ -40,6 +45,10 @@ test('offline signer binds private-key output to the pinned official public key'
   assert.match(source, /key-info[\s\S]*--public-key/);
   assert.match(source, /rawPublicKeyHex -cne \$ExpectedPublicKeyHex/);
   assert.match(source, /ExpectedDevelopmentSha512/);
+  assert.match(source, /ExpectedSourceCommit/);
+  assert.match(source, /exact reviewed clean source commit/);
+  assert.match(source, /exactly Node v18\.20\.8/);
+  assert.match(source, /source-evidence\.json/);
   assert.match(source, /independently approved SHA-512 digest/);
   assert.match(source, /\bsign[\s\S]*--key \$SignerPrivate/);
   assert.match(source, /\bverify[\s\S]*--public-key \$SignerPublic/);

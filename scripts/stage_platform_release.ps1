@@ -28,6 +28,41 @@ function Get-ReleaseRegularFile {
     return $item
 }
 
+function Get-LockedReleaseNode {
+    param([Parameter(Mandatory)][string]$Executable)
+    $command = Get-Command $Executable -CommandType Application -ErrorAction Stop
+    $resolved = [IO.Path]::GetFullPath($command.Source)
+    $item = Get-Item -LiteralPath $resolved -Force
+    if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "Release Node executable must be a regular non-link file"
+    }
+    $version = (& $resolved --version).Trim()
+    if ($LASTEXITCODE -ne 0 -or $version -cne 'v18.20.8') {
+        throw "Release tooling requires exactly Node v18.20.8; observed $version"
+    }
+    return $resolved
+}
+
+function Assert-ProductionBuildCache {
+    param([Parameter(Mandatory)][string]$CachePath)
+    $cache = Get-Content -Raw -LiteralPath $CachePath
+    if ($cache -notmatch '(?m)^CMAKE_BUILD_TYPE:STRING=Release$' -or
+        $cache -notmatch '(?m)^LVGL_PLATFORM_PRODUCTION_BUILD:BOOL=ON$' -or
+        $cache -notmatch ("(?m)^LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX:STRING=" +
+            [regex]::Escape($OfficialPublicKeyHex) + '$')) {
+        throw "Platform binaries must come from a Release production build pinned to this public key"
+    }
+    $home = [regex]::Match($cache, '(?m)^CMAKE_HOME_DIRECTORY:INTERNAL=(.+)$')
+    if (-not $home.Success) {
+        throw "Platform build cache is not bound to this source repository"
+    }
+    $cacheHome = [IO.Path]::GetFullPath($home.Groups[1].Value.Trim())
+    $repositoryHome = [IO.Path]::GetFullPath($ReleaseRepository)
+    if (-not $cacheHome.Equals($repositoryHome, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Platform build cache is not bound to this source repository"
+    }
+}
+
 function Assert-ReleaseAarch64Elf {
     param([Parameter(Mandatory)][string]$Path)
     $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read,
@@ -76,6 +111,7 @@ function Read-CertifiedReleaseProfile {
 if ($OfficialPublicKeyHex -eq ('0' * 64) -or $OfficialPublicKeyHex -eq $ReleaseForbiddenTestKey) {
     throw "The all-zero and RFC 8032 test public keys are forbidden"
 }
+$releaseNode = Get-LockedReleaseNode -Executable $Node
 if (Test-Path -LiteralPath $ReleaseOutput) {
     throw "Refusing to overwrite release output: $ReleaseOutput"
 }
@@ -95,12 +131,20 @@ if ($LASTEXITCODE -ne 0 -or $gitStatus.Count -ne 0) {
 $gitCommit = (& git -C $ReleaseRepository rev-parse HEAD).Trim()
 $gitTimestamp = [DateTimeOffset]::FromUnixTimeSeconds(
     [long]((& git -C $ReleaseRepository show -s --format=%ct HEAD).Trim()))
-$cache = Get-Content -Raw -LiteralPath (Join-Path $ReleaseBuild 'CMakeCache.txt')
-if ($cache -notmatch '(?m)^CMAKE_BUILD_TYPE:STRING=Release$' -or
-    $cache -notmatch '(?m)^LVGL_PLATFORM_PRODUCTION_BUILD:BOOL=ON$' -or
-    $cache -notmatch ("(?m)^LVGL_PLATFORM_OFFICIAL_PUBLIC_KEY_HEX:STRING=" +
-        [regex]::Escape($OfficialPublicKeyHex) + '$')) {
-    throw "Platform binaries must come from a Release production build pinned to this public key"
+$cachePath = Join-Path $ReleaseBuild 'CMakeCache.txt'
+$null = Get-ReleaseRegularFile -Path $cachePath -MaximumBytes (16MB)
+Assert-ProductionBuildCache -CachePath $cachePath
+
+& cmake -S $ReleaseRepository -B $ReleaseBuild | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "Production build reconfiguration failed" }
+Assert-ProductionBuildCache -CachePath $cachePath
+& cmake --build $ReleaseBuild --config Release --clean-first --target `
+    lvgl_sessiond lvgl_launcher lvgl_installer game_2048 | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "Clean production platform rebuild failed" }
+$postBuildStatus = @(& git -C $ReleaseRepository status --porcelain=v1 --untracked-files=all)
+$postBuildCommit = (& git -C $ReleaseRepository rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $postBuildStatus.Count -ne 0 -or $postBuildCommit -cne $gitCommit) {
+    throw "Source changed during the clean production rebuild"
 }
 
 $profile = Read-CertifiedReleaseProfile -Path $ReleaseProfile
@@ -148,7 +192,7 @@ try {
     [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 8) + "`n",
         [Text.UTF8Encoding]::new($false))
     $developmentPackage = Join-Path $artifact 'platform.lvapp.dev'
-    $buildReport = @(& $Node (Join-Path $ReleaseRepository 'tools/lvapp/cli.mjs') build `
+    $buildReport = @(& $releaseNode (Join-Path $ReleaseRepository 'tools/lvapp/cli.mjs') build `
         --manifest $manifestPath --root $root --out $developmentPackage)
     if ($LASTEXITCODE -ne 0) { throw "Deterministic platform package build failed" }
     [IO.File]::WriteAllLines((Join-Path $artifact 'inspection.json'), $buildReport,
