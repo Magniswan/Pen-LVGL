@@ -22,6 +22,7 @@
 #include <cstring>
 #include <memory>
 #include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -54,6 +55,11 @@ constexpr const char* kApplicationStore = "/userdisk/apps/lvgl-apps";
 constexpr const char* kApplicationPolicyStore = "/userdisk/apps/lvgl-app-policy";
 constexpr const char* kApplicationDataDirectory = "lvgl-data";
 constexpr std::size_t kMaximumPackageSize = 256U * 1024U * 1024U + 96U;
+// A canonical package path is at most 240 bytes, so 128 levels cover the
+// deepest possible one-character components while remaining explicitly bounded.
+constexpr std::size_t kApplicationRemovalDepthLimit = 128;
+constexpr std::size_t kApplicationRemovalNodeLimit = 8192;
+constexpr std::size_t kLifecycleAuditLimit = 8192;
 constexpr int kReadyTimeoutMilliseconds = 10000;
 
 volatile std::sig_atomic_t g_stop = 0;
@@ -662,11 +668,20 @@ bool rollback_application_after_failure(
     return true;
 }
 
-std::vector<std::string> installed_application_ids() noexcept
+std::vector<std::string> installed_application_ids(bool* reliable = nullptr) noexcept
 {
+    if(reliable != nullptr) *reliable = false;
     std::vector<std::string> ids;
-    auto applications = open_absolute_directory(std::string(kApplicationStore) + "/apps");
-    if(!applications.valid()) return ids;
+    auto store = open_absolute_directory(kApplicationStore);
+    if(!trusted_directory(store.get())) return ids;
+    struct stat root_details {};
+    if(::fstatat(store.get(), "apps", &root_details, AT_SYMLINK_NOFOLLOW) != 0) {
+        if(errno == ENOENT && reliable != nullptr) *reliable = true;
+        return ids;
+    }
+    FileDescriptor applications(::openat(
+        store.get(), "apps", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
+    if(!trusted_directory(applications.get())) return ids;
     const int duplicate = ::dup(applications.get());
     if(duplicate < 0) return ids;
     std::unique_ptr<DIR, DirectoryCloser> directory(::fdopendir(duplicate));
@@ -691,7 +706,410 @@ std::vector<std::string> installed_application_ids() noexcept
     if(errno != 0) return {};
     std::sort(ids.begin(), ids.end());
     ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    if(reliable != nullptr) *reliable = true;
     return ids;
+}
+
+std::string hex_digest(const lvgl_platform::Sha512Digest& digest)
+{
+    constexpr char hex[] = "0123456789abcdef";
+    std::string output;
+    output.reserve(digest.size() * 2);
+    for(const auto value : digest) {
+        output.push_back(hex[value >> 4U]);
+        output.push_back(hex[value & 0x0fU]);
+    }
+    return output;
+}
+
+bool secure_suffix(std::string& output) noexcept
+{
+    std::array<std::uint8_t, 12> bytes {};
+    std::size_t received = 0;
+    while(received < bytes.size()) {
+        const auto count = ::getrandom(bytes.data() + received, bytes.size() - received, 0);
+        if(count < 0 && errno == EINTR) continue;
+        if(count <= 0) return false;
+        received += static_cast<std::size_t>(count);
+    }
+    constexpr char hex[] = "0123456789abcdef";
+    output.clear();
+    output.reserve(bytes.size() * 2);
+    for(const auto byte : bytes) {
+        output.push_back(hex[byte >> 4U]);
+        output.push_back(hex[byte & 0x0fU]);
+    }
+    return true;
+}
+
+struct InstalledApplicationSnapshot {
+    lvgl_platform::InstalledApplicationCandidate public_value;
+    lvgl_platform::ApplicationReleaseState state;
+    bool state_loaded {false};
+};
+
+bool installed_snapshot_token(
+    std::string_view app_id, const struct stat& directory,
+    const std::optional<lvgl_platform::ApplicationReleaseState>& state,
+    const lvgl_platform::CryptoProvider& crypto, std::string& output) noexcept
+{
+    std::string material = "LVGL-INSTALLED-SNAPSHOT-v1\n";
+    material.append(app_id);
+    material.push_back('\n');
+    material.append(std::to_string(static_cast<std::uint64_t>(directory.st_dev)));
+    material.push_back('\n');
+    material.append(std::to_string(static_cast<std::uint64_t>(directory.st_ino)));
+    material.push_back('\n');
+    material.append(std::to_string(static_cast<std::int64_t>(directory.st_ctime)));
+    material.push_back('\n');
+    if(state.has_value()) {
+        material.append(std::to_string(state->generation));
+        material.push_back('\n');
+        material.append(std::to_string(state->current_release));
+        material.push_back('\n');
+        material.append(std::to_string(state->previous_release));
+        material.push_back('\n');
+        material.append(std::to_string(state->high_release));
+        material.push_back('\n');
+        material.append(std::to_string(state->quarantined_release));
+        material.push_back('\n');
+        material.append(std::to_string(state->high_security_epoch));
+        material.push_back('\n');
+        material.append(std::to_string(state->consecutive_launch_failures));
+        material.push_back('\n');
+        material.append(state->signing_key_id);
+        material.push_back('\n');
+        material.append(reinterpret_cast<const char*>(state->current_digest.data()),
+                        state->current_digest.size());
+        material.append(reinterpret_cast<const char*>(state->previous_digest.data()),
+                        state->previous_digest.size());
+        material.append(reinterpret_cast<const char*>(state->high_digest.data()),
+                        state->high_digest.size());
+    } else {
+        material.append("untrusted-policy");
+    }
+    lvgl_platform::Sha512Digest digest {};
+    if(!crypto.sha512(material.data(), material.size(), digest)) return false;
+    output = hex_digest(digest);
+    return true;
+}
+
+std::vector<InstalledApplicationSnapshot> installed_application_snapshots(
+    const lvgl_platform::CertifiedSessionProfile& profile,
+    lvgl_platform::CryptoProvider& crypto, bool& reliable) noexcept
+{
+    reliable = false;
+    std::vector<InstalledApplicationSnapshot> output;
+    auto store = open_absolute_directory(kApplicationStore);
+    if(!trusted_directory(store.get())) return output;
+    struct stat root_details {};
+    if(::fstatat(store.get(), "apps", &root_details, AT_SYMLINK_NOFOLLOW) != 0) {
+        if(errno == ENOENT) reliable = true;
+        return output;
+    }
+    FileDescriptor applications(::openat(
+        store.get(), "apps", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
+    if(!trusted_directory(applications.get())) return output;
+    bool identifiers_reliable = false;
+    const auto identifiers = installed_application_ids(&identifiers_reliable);
+    if(!identifiers_reliable) return output;
+    for(const auto& app_id : identifiers) {
+        struct stat directory {};
+        if(::fstatat(applications.get(), app_id.c_str(), &directory, AT_SYMLINK_NOFOLLOW) != 0 ||
+           !S_ISDIR(directory.st_mode) || directory.st_uid != 0 ||
+           (directory.st_mode & 0022) != 0) {
+            continue;
+        }
+        InstalledApplicationSnapshot snapshot;
+        snapshot.public_value.app_id = app_id;
+        snapshot.public_value.name = app_id;
+        snapshot.public_value.version = "unknown";
+        snapshot.public_value.detail = "INSTALLED_POLICY_UNTRUSTED";
+        const auto stored = lvgl_platform::load_release_state(
+            kApplicationPolicyStore, app_id, crypto);
+        std::optional<lvgl_platform::ApplicationReleaseState> token_state;
+        if(stored.status == lvgl_platform::StateStoreStatus::loaded ||
+           stored.status == lvgl_platform::StateStoreStatus::loaded_degraded) {
+            snapshot.state = stored.selected.state;
+            snapshot.state_loaded = true;
+            snapshot.public_value.policy_trusted = true;
+            token_state = snapshot.state;
+            snapshot.public_value.current_release = snapshot.state.current_release;
+            snapshot.public_value.previous_release = snapshot.state.previous_release;
+            snapshot.public_value.security_epoch = snapshot.state.high_security_epoch;
+            snapshot.public_value.version = "release-" +
+                                            std::to_string(snapshot.state.current_release);
+            VerifiedApplication current;
+            if(verify_application_release(
+                   app_id, snapshot.state.current_release, snapshot.state.current_digest,
+                   snapshot.state.signing_key_id, profile, crypto, current)) {
+                const auto& manifest = current.verification.manifest;
+                snapshot.public_value.name = manifest.name;
+                snapshot.public_value.version = manifest.version;
+                snapshot.public_value.security_epoch = manifest.security_epoch;
+                snapshot.public_value.current_verified = true;
+                snapshot.public_value.detail = stored.status ==
+                                                       lvgl_platform::StateStoreStatus::loaded_degraded
+                                                   ? "INSTALLED_VERIFIED_POLICY_DEGRADED"
+                                                   : "INSTALLED_VERIFIED";
+            } else {
+                snapshot.public_value.detail = "INSTALLED_CURRENT_UNTRUSTED";
+            }
+            if(snapshot.state.previous_release != 0) {
+                VerifiedApplication previous;
+                snapshot.public_value.rollback_available = verify_application_release(
+                    app_id, snapshot.state.previous_release, snapshot.state.previous_digest,
+                    snapshot.state.signing_key_id, profile, crypto, previous);
+            }
+        }
+        if(!installed_snapshot_token(
+               app_id, directory, token_state, crypto, snapshot.public_value.token)) {
+            continue;
+        }
+        output.push_back(std::move(snapshot));
+    }
+    std::sort(output.begin(), output.end(), [](const auto& left, const auto& right) {
+        return left.public_value.app_id < right.public_value.app_id;
+    });
+    reliable = true;
+    return output;
+}
+
+bool lifecycle_audit(
+    std::string_view app_id, std::string_view action, std::string_view phase,
+    std::uint64_t generation) noexcept
+{
+    if(!lvgl_platform::valid_session_app_id(app_id) || action.empty() || phase.empty()) return false;
+    auto policy = open_absolute_directory(kApplicationPolicyStore);
+    if(!trusted_directory(policy.get())) return false;
+    bool created = false;
+    if(::mkdirat(policy.get(), "audit", 0700) == 0) created = true;
+    else if(errno != EEXIST) return false;
+    FileDescriptor audit(::openat(
+        policy.get(), "audit", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
+    if(!private_directory(audit.get()) || (created && ::fsync(policy.get()) != 0)) return false;
+    const std::string filename = std::string(app_id) + ".audit";
+    FileDescriptor file(::openat(
+        audit.get(), filename.c_str(), O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600));
+    struct stat details {};
+    if(!file.valid() || ::fstat(file.get(), &details) != 0 || !S_ISREG(details.st_mode) ||
+       details.st_uid != 0 || details.st_nlink != 1 || (details.st_mode & 0777) != 0600 ||
+       details.st_size < 0 || static_cast<std::uint64_t>(details.st_size) > kLifecycleAuditLimit) {
+        return false;
+    }
+    timespec now {};
+    if(::clock_gettime(CLOCK_REALTIME, &now) != 0 || now.tv_sec < 0) return false;
+    const std::string line = std::to_string(static_cast<std::uint64_t>(now.tv_sec)) + " " +
+                             std::string(action) + " " + std::string(phase) + " " +
+                             std::to_string(generation) + "\n";
+    if(line.size() > 128) return false;
+    if(static_cast<std::uint64_t>(details.st_size) + line.size() > kLifecycleAuditLimit) {
+        std::string suffix;
+        if(!secure_suffix(suffix)) return false;
+        const std::string temporary = ".audit-" + suffix;
+        FileDescriptor replacement(::openat(
+            audit.get(), temporary.c_str(),
+            O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600));
+        const std::string rotated = "AUDIT_ROTATED\n" + line;
+        if(!replacement.valid() ||
+           !write_all(replacement.get(), rotated.data(), rotated.size()) ||
+           ::fsync(replacement.get()) != 0 ||
+           ::renameat(audit.get(), temporary.c_str(), audit.get(), filename.c_str()) != 0 ||
+           ::fsync(audit.get()) != 0) {
+            ::unlinkat(audit.get(), temporary.c_str(), 0);
+            return false;
+        }
+        return true;
+    }
+    if(::lseek(file.get(), 0, SEEK_END) < 0 ||
+       !write_all(file.get(), line.data(), line.size()) || ::fsync(file.get()) != 0) {
+        return false;
+    }
+    return true;
+}
+
+bool remove_application_contents(
+    int directory, dev_t device, std::size_t depth, std::size_t& nodes) noexcept
+{
+    if(depth > kApplicationRemovalDepthLimit) return false;
+    const int duplicate = ::dup(directory);
+    if(duplicate < 0) return false;
+    std::unique_ptr<DIR, DirectoryCloser> entries(::fdopendir(duplicate));
+    if(!entries) {
+        ::close(duplicate);
+        return false;
+    }
+    errno = 0;
+    while(const auto* entry = ::readdir(entries.get())) {
+        const std::string_view name(entry->d_name);
+        if(name == "." || name == "..") continue;
+        if(++nodes > kApplicationRemovalNodeLimit) {
+            (void)::fsync(directory);
+            return false;
+        }
+        struct stat details {};
+        if(::fstatat(directory, entry->d_name, &details, AT_SYMLINK_NOFOLLOW) != 0) {
+            (void)::fsync(directory);
+            return false;
+        }
+        if(S_ISDIR(details.st_mode)) {
+            FileDescriptor child(::openat(
+                directory, entry->d_name,
+                O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
+            struct stat opened {};
+            if(!trusted_directory(child.get()) || ::fstat(child.get(), &opened) != 0 ||
+               opened.st_dev != device || opened.st_ino != details.st_ino ||
+               !remove_application_contents(child.get(), device, depth + 1, nodes) ||
+               ::unlinkat(directory, entry->d_name, AT_REMOVEDIR) != 0) {
+                (void)::fsync(directory);
+                return false;
+            }
+        } else if(::unlinkat(directory, entry->d_name, 0) != 0) {
+            (void)::fsync(directory);
+            return false;
+        }
+        errno = 0;
+    }
+    return errno == 0 && ::fsync(directory) == 0;
+}
+
+bool cleanup_application_tombstones() noexcept
+{
+    constexpr std::string_view prefix = ".removed-";
+    auto store = open_absolute_directory(kApplicationStore);
+    if(!trusted_directory(store.get())) return false;
+    struct stat root_details {};
+    if(::fstatat(store.get(), "apps", &root_details, AT_SYMLINK_NOFOLLOW) != 0) {
+        return errno == ENOENT;
+    }
+    FileDescriptor applications(::openat(
+        store.get(), "apps", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
+    if(!trusted_directory(applications.get())) return false;
+    const int duplicate = ::dup(applications.get());
+    if(duplicate < 0) return false;
+    std::unique_ptr<DIR, DirectoryCloser> entries(::fdopendir(duplicate));
+    if(!entries) {
+        ::close(duplicate);
+        return false;
+    }
+    std::size_t nodes = 0;
+    errno = 0;
+    while(const auto* entry = ::readdir(entries.get())) {
+        const std::string_view name(entry->d_name);
+        if(name.size() != prefix.size() + 24 || name.substr(0, prefix.size()) != prefix) {
+            continue;
+        }
+        if(!std::all_of(
+               name.begin() + static_cast<std::ptrdiff_t>(prefix.size()), name.end(),
+               [](char value) {
+                   return (value >= '0' && value <= '9') ||
+                          (value >= 'a' && value <= 'f');
+               })) {
+            continue;
+        }
+        FileDescriptor tombstone(::openat(
+            applications.get(), entry->d_name,
+            O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
+        struct stat details {};
+        if(!trusted_directory(tombstone.get()) || ::fstat(tombstone.get(), &details) != 0 ||
+           !remove_application_contents(tombstone.get(), details.st_dev, 0, nodes) ||
+           ::unlinkat(applications.get(), entry->d_name, AT_REMOVEDIR) != 0) {
+            return false;
+        }
+        errno = 0;
+    }
+    return errno == 0 && ::fsync(applications.get()) == 0;
+}
+
+bool remove_installed_application(
+    const InstalledApplicationSnapshot& snapshot, lvgl_platform::CryptoProvider& crypto,
+    std::string& detail) noexcept
+{
+    auto applications = open_absolute_directory(std::string(kApplicationStore) + "/apps");
+    if(!trusted_directory(applications.get())) return false;
+    FileDescriptor application(::openat(
+        applications.get(), snapshot.public_value.app_id.c_str(),
+        O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
+    struct stat directory {};
+    std::optional<lvgl_platform::ApplicationReleaseState> token_state;
+    if(snapshot.state_loaded) token_state = snapshot.state;
+    std::string current_token;
+    if(!trusted_directory(application.get()) || ::fstat(application.get(), &directory) != 0 ||
+       !installed_snapshot_token(
+           snapshot.public_value.app_id, directory, token_state, crypto, current_token) ||
+       current_token != snapshot.public_value.token ||
+       !lifecycle_audit(snapshot.public_value.app_id, "remove", "BEGIN",
+                       snapshot.state_loaded ? snapshot.state.generation : 0)) {
+        return false;
+    }
+    std::string suffix;
+    if(!secure_suffix(suffix)) return false;
+    const std::string tombstone = ".removed-" + suffix;
+    struct stat collision {};
+    if(::fstatat(applications.get(), tombstone.c_str(), &collision, AT_SYMLINK_NOFOLLOW) == 0 ||
+       errno != ENOENT ||
+       ::renameat(applications.get(), snapshot.public_value.app_id.c_str(),
+                  applications.get(), tombstone.c_str()) != 0 ||
+       ::fsync(applications.get()) != 0) {
+        return false;
+    }
+    std::size_t nodes = 0;
+    if(!remove_application_contents(application.get(), directory.st_dev, 0, nodes) ||
+       ::unlinkat(applications.get(), tombstone.c_str(), AT_REMOVEDIR) != 0 ||
+       ::fsync(applications.get()) != 0) {
+        (void)lifecycle_audit(snapshot.public_value.app_id, "remove", "ISOLATED",
+                              snapshot.state_loaded ? snapshot.state.generation : 0);
+        detail = "APPLICATION_REMOVED_CLEANUP_DEFERRED";
+        return true;
+    }
+    (void)lifecycle_audit(snapshot.public_value.app_id, "remove", "COMMIT",
+                          snapshot.state_loaded ? snapshot.state.generation : 0);
+    detail = "APPLICATION_PAYLOAD_REMOVED_POLICY_DATA_RETAINED";
+    return true;
+}
+
+bool rollback_installed_application(
+    const InstalledApplicationSnapshot& snapshot,
+    const lvgl_platform::CertifiedSessionProfile& profile, std::string& detail) noexcept
+{
+    if(!snapshot.state_loaded || snapshot.state.previous_release == 0) return false;
+    const auto crypto = lvgl_platform::CryptoProvider::load_default();
+    if(crypto == nullptr) return false;
+    const auto stored = lvgl_platform::load_release_state(
+        kApplicationPolicyStore, snapshot.public_value.app_id, *crypto);
+    if((stored.status != lvgl_platform::StateStoreStatus::loaded &&
+        stored.status != lvgl_platform::StateStoreStatus::loaded_degraded) ||
+       stored.selected.state.generation != snapshot.state.generation ||
+       stored.selected.state.current_release != snapshot.state.current_release ||
+       stored.selected.state.previous_release != snapshot.state.previous_release ||
+       stored.selected.state.current_digest != snapshot.state.current_digest ||
+       stored.selected.state.previous_digest != snapshot.state.previous_digest ||
+       stored.selected.state.signing_key_id != snapshot.state.signing_key_id) {
+        return false;
+    }
+    const auto& active = stored.selected.state;
+    VerifiedApplication previous;
+    if(!verify_application_release(
+           snapshot.public_value.app_id, active.previous_release,
+           active.previous_digest, active.signing_key_id,
+           profile, *crypto, previous)) {
+        return false;
+    }
+    const auto rolled_back = lvgl_platform::rollback_release(active, false);
+    if(!rolled_back.has_value() ||
+       !lifecycle_audit(snapshot.public_value.app_id, "rollback", "BEGIN",
+                       active.generation)) {
+        return false;
+    }
+    const auto persisted = lvgl_platform::persist_release_state(
+        kApplicationPolicyStore, *rolled_back, *crypto);
+    if(!persisted.ok()) return false;
+    (void)lifecycle_audit(snapshot.public_value.app_id, "rollback", "COMMIT",
+                          rolled_back->generation);
+    detail = persisted.status == lvgl_platform::StateStoreStatus::written_degraded
+                 ? "APPLICATION_ROLLED_BACK_POLICY_DEGRADED"
+                 : "APPLICATION_ROLLED_BACK_CURRENT_QUARANTINED";
+    return true;
 }
 
 bool application_uid_is_unique(std::string_view app_id) noexcept
@@ -1108,6 +1526,65 @@ bool handle_installer_request(
             request.token, policy, *crypto);
         response.status = installer_status(result.status);
         response.detail = result.detail;
+    } else if(request.command == lvgl_platform::InstallerCommand::installed_scan ||
+              request.command == lvgl_platform::InstallerCommand::installed_candidate ||
+              request.command == lvgl_platform::InstallerCommand::rollback ||
+              request.command == lvgl_platform::InstallerCommand::remove) {
+        if(!cleanup_application_tombstones()) {
+            response.status = lvgl_platform::InstallerProtocolStatus::io_error;
+            response.detail = "APPLICATION_REMOVAL_RECOVERY_FAILED_CLOSED";
+            const auto encoded = lvgl_platform::encode_installer_response(response);
+            return encoded[0] != 0 &&
+                   ::send(socket, encoded.data(), encoded.size(), MSG_NOSIGNAL) ==
+                       static_cast<ssize_t>(encoded.size());
+        }
+        bool installed_reliable = false;
+        const auto installed = installed_application_snapshots(
+            profile, *crypto, installed_reliable);
+        if(!installed_reliable) {
+            response.status = lvgl_platform::InstallerProtocolStatus::unavailable;
+            response.detail = "INSTALLED_ROOT_UNTRUSTED";
+        } else if(request.command == lvgl_platform::InstallerCommand::installed_scan) {
+            response.status = installed.empty() ? lvgl_platform::InstallerProtocolStatus::empty
+                                                : lvgl_platform::InstallerProtocolStatus::ready;
+            response.detail = installed.empty() ? "INSTALLED_EMPTY" : "INSTALLED_READY";
+            response.count = static_cast<std::uint32_t>(installed.size());
+        } else if(request.command == lvgl_platform::InstallerCommand::installed_candidate) {
+            if(request.index < installed.size()) {
+                response.status = lvgl_platform::InstallerProtocolStatus::ready;
+                response.detail = installed[request.index].public_value.detail;
+                response.installed = installed[request.index].public_value;
+            } else {
+                response.status = lvgl_platform::InstallerProtocolStatus::not_found;
+                response.detail = "INSTALLED_CANDIDATE_NOT_FOUND";
+            }
+        } else {
+            const auto selected = std::find_if(
+                installed.begin(), installed.end(), [&request](const auto& candidate) {
+                    return candidate.public_value.token == request.token;
+                });
+            if(selected == installed.end()) {
+                response.status = lvgl_platform::InstallerProtocolStatus::not_found;
+                response.detail = "INSTALLED_SNAPSHOT_STALE";
+            } else if(request.command == lvgl_platform::InstallerCommand::rollback &&
+                      !selected->public_value.rollback_available) {
+                response.status = lvgl_platform::InstallerProtocolStatus::rejected;
+                response.detail = "APPLICATION_TRUSTED_ROLLBACK_UNAVAILABLE";
+            } else {
+                std::string detail;
+                const bool completed = request.command == lvgl_platform::InstallerCommand::rollback
+                                           ? rollback_installed_application(
+                                                 *selected, profile, detail)
+                                           : remove_installed_application(*selected, *crypto, detail);
+                response.status = completed ? lvgl_platform::InstallerProtocolStatus::ready
+                                            : lvgl_platform::InstallerProtocolStatus::io_error;
+                response.detail = completed
+                                      ? detail
+                                      : request.command == lvgl_platform::InstallerCommand::rollback
+                                            ? "APPLICATION_ROLLBACK_FAILED_CLOSED"
+                                            : "APPLICATION_REMOVE_FAILED_CLOSED";
+            }
+        }
     } else {
         const auto scan = lvgl_platform::scan_official_inbox(policy, *crypto);
         response.status = installer_status(scan.status);

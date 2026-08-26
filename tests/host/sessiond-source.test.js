@@ -86,3 +86,25 @@ test('only a signed platform built-in may be used after a dynamic override is ab
   assert.match(source, /open_release_file\(release\.directory\.get\(\), path\)/);
   assert.match(source, /trusted_regular\(executable\.get\(\), 0755/);
 });
+
+test('manual lifecycle changes stay inside a token-bound root broker transaction', () => {
+  assert.match(source, /LVGL-INSTALLED-SNAPSHOT-v1/);
+  assert.match(source, /AT_SYMLINK_NOFOLLOW/);
+  assert.match(source, /O_NOFOLLOW/);
+  assert.match(source, /kApplicationRemovalDepthLimit/);
+  assert.match(source, /kApplicationRemovalNodeLimit/);
+  assert.match(source, /\.removed-/);
+  assert.match(source, /cleanup_application_tombstones\(\)/);
+  assert.match(source, /APPLICATION_REMOVAL_RECOVERY_FAILED_CLOSED/);
+  assert.match(source, /::renameat\([\s\S]*snapshot\.public_value\.app_id/);
+  assert.match(source, /rollback_release\(active, false\)/);
+  assert.match(source, /lifecycle_audit\([\s\S]*"BEGIN"/);
+  assert.match(source, /APPLICATION_PAYLOAD_REMOVED_POLICY_DATA_RETAINED/);
+  assert.doesNotMatch(source, /request\.(?:app_id|path|public_key)/);
+  const removal = source.slice(
+    source.indexOf('bool remove_installed_application('),
+    source.indexOf('bool rollback_installed_application('),
+  );
+  assert.doesNotMatch(removal, /kApplicationPolicyStore|kApplicationDataDirectory/);
+  assert.doesNotMatch(removal, /system\s*\(|popen\s*\(|execv\s*\(/);
+});

@@ -141,14 +141,70 @@ lvgl_platform::InboxScanResult InstallerClient::scan() noexcept
     return result;
 }
 
+InstalledApplicationScanResult InstallerClient::scan_installed() noexcept
+{
+    InstalledApplicationScanResult result;
+    result.detail = "INSTALLER_BROKER_UNAVAILABLE";
+    if(next_request_id_ == std::numeric_limits<std::uint64_t>::max()) return result;
+    lvgl_platform::InstallerResponse response;
+    const lvgl_platform::InstallerRequest request {
+        lvgl_platform::InstallerCommand::installed_scan, next_request_id_++, 0, {}};
+    if(!exchange(request, response)) return result;
+    result.detail = response.detail;
+    if(response.status == lvgl_platform::InstallerProtocolStatus::empty) {
+        result.success = true;
+        return result;
+    }
+    if(response.status != lvgl_platform::InstallerProtocolStatus::ready || response.count > 64) {
+        return result;
+    }
+    result.applications.reserve(response.count);
+    for(std::uint32_t index = 0; index < response.count; ++index) {
+        if(next_request_id_ == std::numeric_limits<std::uint64_t>::max()) {
+            result.detail = "INSTALLER_REQUEST_ID_EXHAUSTED";
+            result.applications.clear();
+            return result;
+        }
+        lvgl_platform::InstallerResponse candidate;
+        const lvgl_platform::InstallerRequest candidate_request {
+            lvgl_platform::InstallerCommand::installed_candidate,
+            next_request_id_++, index, {}};
+        if(!exchange(candidate_request, candidate) ||
+           candidate.status != lvgl_platform::InstallerProtocolStatus::ready) {
+            result.detail = "INSTALLER_INSTALLED_SET_CHANGED";
+            result.applications.clear();
+            return result;
+        }
+        result.applications.push_back(std::move(candidate.installed));
+    }
+    result.success = true;
+    return result;
+}
+
 InstallerClientResult InstallerClient::install(const std::string& token) noexcept
+{
+    return mutate(lvgl_platform::InstallerCommand::install, token);
+}
+
+InstallerClientResult InstallerClient::rollback(const std::string& token) noexcept
+{
+    return mutate(lvgl_platform::InstallerCommand::rollback, token);
+}
+
+InstallerClientResult InstallerClient::remove(const std::string& token) noexcept
+{
+    return mutate(lvgl_platform::InstallerCommand::remove, token);
+}
+
+InstallerClientResult InstallerClient::mutate(
+    lvgl_platform::InstallerCommand command, const std::string& token) noexcept
 {
     if(next_request_id_ == std::numeric_limits<std::uint64_t>::max()) {
         return {false, "INSTALLER_REQUEST_ID_EXHAUSTED"};
     }
     lvgl_platform::InstallerResponse response;
     const lvgl_platform::InstallerRequest request {
-        lvgl_platform::InstallerCommand::install, next_request_id_++, 0, token};
+        command, next_request_id_++, 0, token};
     if(!exchange(request, response)) return {false, "INSTALLER_BROKER_UNAVAILABLE"};
     return {response.status == lvgl_platform::InstallerProtocolStatus::ready,
             std::move(response.detail)};

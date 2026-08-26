@@ -421,6 +421,61 @@ void test_installer_protocol()
     corrupt.back() = 1;
     expect(!decode_installer_response(corrupt.data(), corrupt.size(), decoded_candidate),
            "installer response rejects nonzero padding and payload smuggling");
+
+    InstallerRequest rollback {
+        InstallerCommand::rollback, 10, 0, std::string(128, 'c')};
+    const auto rollback_wire = encode_installer_request(rollback);
+    InstallerRequest decoded_rollback;
+    expect(decode_installer_request(
+               rollback_wire.data(), rollback_wire.size(), decoded_rollback) &&
+               decoded_rollback.command == InstallerCommand::rollback &&
+               decoded_rollback.token == rollback.token,
+           "lifecycle mutations accept only an opaque installed snapshot token");
+
+    InstallerResponse installed;
+    installed.command = InstallerCommand::installed_candidate;
+    installed.status = InstallerProtocolStatus::ready;
+    installed.request_id = 11;
+    installed.detail = "INSTALLED_VERIFIED";
+    installed.installed = {
+        std::string(128, 'd'), "top.lvgl.example", "Example", "2.0.0",
+        "INSTALLED_VERIFIED", 8, 7, 3, true, true, true};
+    const auto installed_wire = encode_installer_response(installed);
+    InstallerResponse decoded_installed;
+    expect(decode_installer_response(
+               installed_wire.data(), installed_wire.size(), decoded_installed) &&
+               decoded_installed.installed.app_id == "top.lvgl.example" &&
+               decoded_installed.installed.current_release == 8 &&
+               decoded_installed.installed.previous_release == 7 &&
+               decoded_installed.installed.policy_trusted &&
+               decoded_installed.installed.current_verified &&
+               decoded_installed.installed.rollback_available,
+           "installed lifecycle metadata has a strict canonical round trip");
+    auto invalid_flags = installed_wire;
+    invalid_flags[14] = 8;
+    expect(!decode_installer_response(
+               invalid_flags.data(), invalid_flags.size(), decoded_installed),
+           "installer rejects unknown lifecycle capability flags");
+    auto impossible = installed;
+    impossible.installed.policy_trusted = false;
+    const auto impossible_wire = encode_installer_response(impossible);
+    expect(impossible_wire[0] == 0,
+           "untrusted policy metadata cannot claim a current release");
+    InstallerResponse damaged;
+    damaged.command = InstallerCommand::installed_candidate;
+    damaged.status = InstallerProtocolStatus::ready;
+    damaged.request_id = 12;
+    damaged.detail = "INSTALLED_POLICY_UNTRUSTED";
+    damaged.installed = {
+        std::string(128, 'e'), "top.lvgl.damaged", "top.lvgl.damaged", "unknown",
+        "INSTALLED_POLICY_UNTRUSTED", 0, 0, 0, false, false, false};
+    const auto damaged_wire = encode_installer_response(damaged);
+    InstallerResponse decoded_damaged;
+    expect(decode_installer_response(
+               damaged_wire.data(), damaged_wire.size(), decoded_damaged) &&
+               !decoded_damaged.installed.policy_trusted &&
+               decoded_damaged.installed.current_release == 0,
+           "damaged policy entries remain removable without inventing release metadata");
 }
 
 void test_package_verifier()
@@ -704,6 +759,11 @@ void test_release_state()
                rolled_back->current_release == 1 && rolled_back->previous_release == 0 &&
                rolled_back->quarantined_release == 2 && rolled_back->high_release == 2,
            "failed first launch rolls back once while retaining the high-water mark");
+    const auto manual = lvgl_platform::rollback_release(*second, false);
+    expect(manual.has_value() && manual->current_release == 1 &&
+               manual->quarantined_release == 2 && manual->high_release == 2 &&
+               manual->consecutive_launch_failures == 0,
+           "manual rollback quarantines current without forging a launch failure");
     if(rolled_back.has_value()) {
         expect(!lvgl_platform::activation_state_for(candidate_two, digest_two, rolled_back).has_value(),
                "a quarantined release cannot be reactivated by reinstalling identical bytes");

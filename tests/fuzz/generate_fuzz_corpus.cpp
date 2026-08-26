@@ -1,5 +1,6 @@
 #include "lvgl_platform/application_registry.h"
 #include "lvgl_platform/crypto_provider.h"
+#include "lvgl_platform/installer_protocol.h"
 #include "lvgl_platform/release_state.h"
 #include "lvgl_platform/session_control.h"
 #include "lvgl_platform/storage_protocol.h"
@@ -68,6 +69,20 @@ int main(int argc, char** argv)
     const auto storage = lvgl_platform::encode_storage_request(
         {lvgl_platform::StorageCommand::write, 1, "seed", 16, {0x01, 0x02}});
     if(storage.empty() || !write_bytes(session_root / "storage.request", storage)) return 8;
+
+    const auto installed_scan = lvgl_platform::encode_installer_request(
+        {lvgl_platform::InstallerCommand::installed_scan, 2, 0, {}});
+    if(!write_bytes(
+           session_root / "installer-installed-scan.request",
+           installed_scan.data(), installed_scan.size())) {
+        return 8;
+    }
+    const auto remove = lvgl_platform::encode_installer_request(
+        {lvgl_platform::InstallerCommand::remove, 3, 0, std::string(128, 'a')});
+    if(!write_bytes(
+           session_root / "installer-remove.request", remove.data(), remove.size())) {
+        return 8;
+    }
 
     const auto touch = lvgl_platform::encode_touch_frame(
         {1, 1, 1, lvgl_platform::TouchPhase::start, 0, 100, 100, 0});

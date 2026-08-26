@@ -10,7 +10,13 @@ test('non-root installer UI uses only the inherited typed broker', () => {
   const ui = read('apps/installer/installer_ui.cpp');
   const client = read('src/runtime/installer_client.cpp');
   assert.match(ui, /installer_\.scan\(\)/);
-  assert.match(ui, /installer_\.install\(token\)/);
+  assert.match(ui, /installer_\.scan_installed\(\)/);
+  assert.match(ui, /installer_\.install\(scan_\.candidates\[selected_\]\.token\)/);
+  assert.match(ui, /installer_\.rollback\(installed_scan_\.applications\[selected_\]\.token\)/);
+  assert.match(ui, /installer_\.remove\(installed_scan_\.applications\[selected_\]\.token\)/);
+  assert.match(ui, /show_confirmation\(operation\)/);
+  assert.match(ui, /高水位不会下降/);
+  assert.match(ui, /反回滚策略与应用私有数据会保留/);
   assert.doesNotMatch(ui, /scan_official_inbox|install_official_inbox_candidate|prepare_application_storage|CryptoProvider/);
   assert.match(client, /LVGL_INSTALLER_FD/);
   assert.match(client, /SOCK_SEQPACKET/);
@@ -25,6 +31,9 @@ test('sessiond grants the broker only to the fixed built-in installer', () => {
   assert.match(daemon, /LVGL_INSTALLER_FD=/);
   assert.match(daemon, /handle_installer_request\(parent_installer\.get\(\), profile\)/);
   assert.match(daemon, /install_official_inbox_candidate\([\s\S]*request\.token/);
+  assert.match(daemon, /installed_application_snapshots\(\s*profile, \*crypto, installed_reliable\)/);
+  assert.match(daemon, /rollback_installed_application\(/);
+  assert.match(daemon, /remove_installed_application\(/);
   assert.match(daemon, /prepare_application_storage\(\)/);
   assert.match(daemon, /installer_policy\(profile\)/);
   assert.doesNotMatch(daemon, /LVGL_INSTALLER_(?:PATH|KEY|COMMAND)/);
@@ -33,11 +42,15 @@ test('sessiond grants the broker only to the fixed built-in installer', () => {
 test('installer protocol has a closed command and fixed packet surface', () => {
   const header = read('platform/include/lvgl_platform/installer_protocol.h');
   const protocol = read('platform/src/ipc/installer_protocol.cpp');
-  assert.match(header, /InstallerCommand : std::uint16_t \{ scan = 1, candidate = 2, install = 3 \}/);
+  assert.match(header, /installed_scan = 4/);
+  assert.match(header, /installed_candidate = 5/);
+  assert.match(header, /rollback = 6/);
+  assert.match(header, /remove = 7/);
   assert.match(header, /kInstallerRequestSize = 160/);
   assert.match(header, /kInstallerResponseSize = 768/);
   assert.match(protocol, /valid_token\(/);
   assert.match(protocol, /token\.size\(\) == kTokenLimit/);
   assert.match(protocol, /all_zero\(/);
+  assert.match(protocol, /'L', 'V', 'I', 'N', 'S', 'T', '2'/);
   assert.doesNotMatch(header, /path|public.?key|shell|command_text/i);
 });

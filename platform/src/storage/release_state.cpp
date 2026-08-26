@@ -284,6 +284,12 @@ std::optional<ApplicationReleaseState> activation_state_for(
 std::optional<ApplicationReleaseState> rollback_failed_release(
     const ApplicationReleaseState& current)
 {
+    return rollback_release(current, true);
+}
+
+std::optional<ApplicationReleaseState> rollback_release(
+    const ApplicationReleaseState& current, bool record_launch_failure)
+{
     if(!valid_state(current) || current.previous_release == 0 ||
        current.generation == std::numeric_limits<std::uint64_t>::max()) {
         return std::nullopt;
@@ -295,8 +301,12 @@ std::optional<ApplicationReleaseState> rollback_failed_release(
     next.current_digest = current.previous_digest;
     next.previous_release = 0;
     next.previous_digest.fill(0);
-    next.consecutive_launch_failures = static_cast<std::uint16_t>(
-        std::min<std::uint32_t>(3, current.consecutive_launch_failures + 1U));
+    if(record_launch_failure) {
+        next.consecutive_launch_failures = static_cast<std::uint16_t>(
+            std::min<std::uint32_t>(3, current.consecutive_launch_failures + 1U));
+    } else {
+        next.consecutive_launch_failures = 0;
+    }
     return valid_state(next) ? std::optional<ApplicationReleaseState>(std::move(next)) : std::nullopt;
 }
 

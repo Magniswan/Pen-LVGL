@@ -69,5 +69,7 @@ std::optional<ApplicationReleaseState> activation_state_for(
     const std::optional<ApplicationReleaseState>& current = std::nullopt);
 std::optional<ApplicationReleaseState> rollback_failed_release(
     const ApplicationReleaseState& current);
+std::optional<ApplicationReleaseState> rollback_release(
+    const ApplicationReleaseState& current, bool record_launch_failure);
 
 }  // namespace lvgl_platform
