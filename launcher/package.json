@@ -9,6 +9,7 @@
     "version": "20200705",
     "bigNum": false
   },
+  "engines": { "node": "18.20.8" },
   "single-js-bundle": false,
   "scripts": {
     "test": "node --test test/launcher-source.test.js",

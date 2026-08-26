@@ -47,3 +47,30 @@ test('offline signer binds private-key output to the pinned official public key'
   assert.match(source, /Refusing to overwrite signer output/);
   assert.doesNotMatch(source, /Get-Content.*SignerPrivate|WriteAll.*SignerPrivate|adb(?:\.exe)?\b/i);
 });
+
+test('Falcon release builders pin toolchains and inspect exact AMR contents', () => {
+  const common = read('scripts/falcon_build_common.ps1');
+  const launcher = read('scripts/build_launcher.ps1');
+  const manager = read('scripts/build_manager.ps1');
+  assert.match(common, /v18\.20\.8/);
+  assert.match(common, /aiot-vue-cli.*1\.0\.32/s);
+  assert.match(common, /aiot-vue-cli\/src\/cli\.js/);
+  assert.match(common, /\$NodeExecutable \$builder -c -q -p/);
+  assert.match(common, /\$NodeExecutable \$builder -p/);
+  assert.match(common, /ValidateSet\('app\.js', 'app\.js\.bin'\)/);
+  assert.match(common, /ScriptEntry.*app_icon\.png.*NativeLibrary.*manifest\.json/s);
+  assert.match(common, /ComputeHash\(\$stream\)/);
+  assert.match(common, /Get-FileHash.*SHA256/);
+  assert.match(launcher, /launcher\/tools\/build-native\.sh/);
+  assert.match(launcher, /libjsapi_lvgl_launcher\.so/);
+  assert.match(manager, /manager\/tools\/build-native\.sh/);
+  assert.match(manager, /libjsapi_lvgl_manager\.so/);
+  assert.doesNotMatch(`${common}\n${launcher}\n${manager}`, /adb(?:\.exe)?\b/i);
+});
+
+test('both Falcon packages declare the exact release Node version', () => {
+  for (const relative of ['launcher/package.json', 'manager/package.json']) {
+    const manifest = JSON.parse(read(relative));
+    assert.equal(manifest.engines.node, '18.20.8');
+  }
+});

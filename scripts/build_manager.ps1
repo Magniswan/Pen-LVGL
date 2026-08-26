@@ -7,11 +7,14 @@ param(
     [string]$DeviceIdentitySha256Hex = "",
     [string]$PlatformPackage = "",
     [string]$WslDistribution = "Ubuntu",
-    [string]$NodeRoot = ""
+    [string]$NodeRoot = "",
+    [string]$NodeExecutable = "node"
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'falcon_build_common.ps1')
 
 function Convert-ToWslPath {
     param([Parameter(Mandatory)][string]$Path)
@@ -66,14 +69,11 @@ if (-not [string]::IsNullOrWhiteSpace($NodeRoot)) {
     if (-not (Test-Path -LiteralPath (Join-Path $resolvedNode "node.exe") -PathType Leaf)) {
         throw "NodeRoot does not contain node.exe: $resolvedNode"
     }
-    $env:PATH = "$resolvedNode;$env:PATH"
+    $NodeExecutable = Join-Path $resolvedNode "node.exe"
 }
-Push-Location (Join-Path $ProjectRoot "manager")
-try {
-    & corepack pnpm@10.28.2 build
-    if ($LASTEXITCODE -ne 0) { throw "Manager AMR build failed" }
-} finally {
-    Pop-Location
-}
+$lockedNode = Get-LockedFalconNode -NodeExecutable $NodeExecutable
+$report = Invoke-LockedFalconPackage -ProjectDirectory (Join-Path $ProjectRoot 'manager') `
+    -NodeExecutable $lockedNode -NativeLibrary 'libjsapi_lvgl_manager.so' `
+    -Production $Production.IsPresent
 
-Write-Output "MANAGER_BUILD_PASS production=$($Production.IsPresent)"
+Write-Output "MANAGER_BUILD_PASS production=$($Production.IsPresent) amr=$($report.Path) sha256=$($report.Sha256)"
