@@ -25,6 +25,7 @@ struct CertifiedSessionProfile {
     std::int32_t display_height {0};
     std::uint16_t display_rotation {0};
     bool hole_session_certified {false};
+    bool personal_unbound {false};
 };
 
 struct SessionProfileParseResult {

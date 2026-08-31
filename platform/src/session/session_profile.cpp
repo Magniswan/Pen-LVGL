@@ -10,11 +10,11 @@
 namespace lvgl_platform {
 namespace {
 
-constexpr std::array<std::string_view, 16> kKeys {
+constexpr std::array<std::string_view, 17> kKeys {
     "PROFILE_ID", "MACHINE", "LOGICAL_WIDTH", "LOGICAL_HEIGHT", "DRM_DEVICE",
     "DRM_CONNECTOR_ID", "DRM_CRTC_ID", "DRM_OVERLAY_PLANE_ID", "DRM_OVERLAY_ZPOS",
     "DISPLAY_X", "DISPLAY_Y", "DISPLAY_WIDTH", "DISPLAY_HEIGHT", "PIXEL_FORMAT",
-    "DISPLAY_ROTATION", "HOLE_SESSION_CERTIFIED",
+    "DISPLAY_ROTATION", "HOLE_SESSION_CERTIFIED", "PERSONAL_UNBOUND",
 };
 
 bool valid_token(std::string_view value, std::size_t limit) noexcept
@@ -118,7 +118,9 @@ SessionProfileParseResult parse_session_profile(std::string_view contents)
                       profile.display_rotation) ||
        (profile.display_rotation != 0 && profile.display_rotation != 90 &&
         profile.display_rotation != 180 && profile.display_rotation != 270) ||
-       values["HOLE_SESSION_CERTIFIED"] != "1") {
+       (values["HOLE_SESSION_CERTIFIED"] != "1" && values["HOLE_SESSION_CERTIFIED"] != "0") ||
+       (values["PERSONAL_UNBOUND"] != "1" && values["PERSONAL_UNBOUND"] != "0") ||
+       (values["HOLE_SESSION_CERTIFIED"] != "1" && values["PERSONAL_UNBOUND"] != "1")) {
         result.detail = "SESSION_PROFILE_VALUE_INVALID";
         return result;
     }
@@ -127,15 +129,19 @@ SessionProfileParseResult parse_session_profile(std::string_view contents)
         result.detail = "SESSION_PROFILE_RECTANGLE_INVALID";
         return result;
     }
-    profile.hole_session_certified = true;
+    profile.personal_unbound = values["PERSONAL_UNBOUND"] == "1";
+    profile.hole_session_certified = values["HOLE_SESSION_CERTIFIED"] == "1";
     return result;
 }
 
 bool package_supports_session_profile(
     const VerifiedPackageManifest& manifest, const CertifiedSessionProfile& profile) noexcept
 {
-    return manifest.app_id == "top.lvgl.platform" && manifest.entry == "bin/lvgl-sessiond" &&
-           std::find(manifest.supported_profiles.begin(), manifest.supported_profiles.end(),
+    if(manifest.app_id != "top.lvgl.platform" || manifest.entry != "bin/lvgl-sessiond") {
+        return false;
+    }
+    if(profile.personal_unbound) return true;
+    return std::find(manifest.supported_profiles.begin(), manifest.supported_profiles.end(),
                      profile.profile_id) != manifest.supported_profiles.end() &&
            std::find(manifest.supported_machines.begin(), manifest.supported_machines.end(),
                      profile.machine) != manifest.supported_machines.end();

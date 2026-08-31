@@ -45,7 +45,7 @@ test('session daemon supervises one independent foreground application', () => {
   assert.match(source, /应用异常退出/);
 });
 
-test('session daemon applies independent identity, resource limits, and inherited devices', () => {
+test('session daemon retains the legacy sandbox and has an explicit personal-root bypass', () => {
   assert.match(source, /RLIMIT_AS/);
   assert.match(source, /RLIMIT_CPU/);
   assert.match(source, /RLIMIT_NPROC/);
@@ -55,8 +55,10 @@ test('session daemon applies independent identity, resource limits, and inherite
   assert.match(source, /application_uid_is_unique\(app_id\)/);
   assert.match(source, /PR_SET_DUMPABLE/);
   assert.match(source, /LVGL_DRM_FD=/);
-  assert.match(source, /LVGL_SANDBOX_REQUIRED=1/);
+  assert.match(source, /LVGL_SANDBOX_REQUIRED=/);
   assert.match(source, /LVGL_APP_UID=/);
+  assert.match(source, /profile\.personal_unbound/);
+  assert.match(source, /LVGL_SANDBOX_REQUIRED=.*profile\.personal_unbound/);
 });
 
 test('dynamic applications are remeasured from official packages and anti-rollback state', () => {

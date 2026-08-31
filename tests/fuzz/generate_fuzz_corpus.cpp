@@ -104,7 +104,8 @@ int main(int argc, char** argv)
         "DISPLAY_HEIGHT=266\n"
         "PIXEL_FORMAT=XRGB8888\n"
         "DISPLAY_ROTATION=0\n"
-        "HOLE_SESSION_CERTIFIED=1\n";
+        "HOLE_SESSION_CERTIFIED=1\n"
+        "PERSONAL_UNBOUND=0\n";
     if(!write_bytes(
            session_root / "profile.env",
            reinterpret_cast<const std::uint8_t*>(profile.data()), profile.size())) {

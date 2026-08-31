@@ -195,8 +195,8 @@ bool Launcher::validateRelease(std::string& error)
     const auto width = parseUnsigned(profile, "LOGICAL_WIDTH");
     const auto height = parseUnsigned(profile, "LOGICAL_HEIGHT");
     if(width < 240 || width > 4096 || height < 80 || height > 2048 ||
-       !flag(profile, "HOLE_SESSION_CERTIFIED")) {
-        error = "installed device profile is not certified for Falcon hole sessions";
+       (!flag(profile, "HOLE_SESSION_CERTIFIED") && !flag(profile, "PERSONAL_UNBOUND"))) {
+        error = "installed platform profile does not permit Falcon hole sessions";
         return false;
     }
     touchWidth_ = static_cast<std::int32_t>(width);

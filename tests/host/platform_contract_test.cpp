@@ -325,7 +325,8 @@ void test_session_contract()
         "DISPLAY_HEIGHT=960\n"
         "PIXEL_FORMAT=ARGB8888\n"
         "DISPLAY_ROTATION=270\n"
-        "HOLE_SESSION_CERTIFIED=1\n";
+        "HOLE_SESSION_CERTIFIED=1\n"
+        "PERSONAL_UNBOUND=0\n";
     const auto parsed_profile = lvgl_platform::parse_session_profile(profile_text);
     expect(parsed_profile.ok() && parsed_profile.profile.logical_width == 960 &&
                parsed_profile.profile.overlay_plane_id == 57,
@@ -339,6 +340,12 @@ void test_session_contract()
     uncertified_profile.replace(certification, 24, "HOLE_SESSION_CERTIFIED=0");
     expect(!lvgl_platform::parse_session_profile(uncertified_profile).ok(),
            "session profile fails closed without hole certification");
+    auto personal_profile = uncertified_profile;
+    const auto mode = personal_profile.find("PERSONAL_UNBOUND=0");
+    personal_profile.replace(mode, 18, "PERSONAL_UNBOUND=1");
+    const auto parsed_personal_profile = lvgl_platform::parse_session_profile(personal_profile);
+    expect(parsed_personal_profile.ok() && parsed_personal_profile.profile.personal_unbound,
+           "personal profile permits an explicitly unbound Falcon hole session");
 
     const lvgl_platform::SessionStatusDocument ready {
         123, 987654321, lvgl_platform::SessionState::ready, 0, true, true, 960, 266};

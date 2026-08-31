@@ -1,6 +1,6 @@
 # Personal Unbound LVGL Release Design
 
-**Status:** User-approved design; implementation not started.
+**Status:** Implemented locally; device deployment intentionally deferred.
 
 **Date:** 2026-08-31
 
@@ -24,9 +24,10 @@ certification or hostile-root resistance.
 - The manager is not bound to ADB serials, device identity digests, model names,
   firmware strings, or a pre-approved Profile.  It accepts only its supported
   AArch64 ABI plus a package authenticated by the one official public key.
-- The platform derives screen, touch, and DRM configuration from the live device
-  at start-up.  A missing required display or input capability is an operational
-  error, not an identity-policy rejection.
+- The signed platform package still carries the display, touch, and DRM session
+  parameters needed by Falcon. They are operational configuration, not a
+  device-identity or model authorization check. A new form factor may therefore
+  need a new personal package profile, but the manager does not need rebinding.
 - LVGL applications run directly as root.  The personal release intentionally
   does not enforce cgroup v2, mount namespace, RLIMIT, seccomp, UID/GID drop, or
   brokered device-handle restrictions.
@@ -67,9 +68,10 @@ install seccomp, change UID/GID, or proxy hardware descriptors.  It retains
 exact-child tracking, explicit stop/reap handling, and does not signal Falcon or
 the `miniapp` process.
 
-At startup the runtime reads the device's available display, touch, and DRM
-facts.  The launcher presents a clear error when those capabilities cannot form
-a working session; it does not use a hard-coded model or device fingerprint.
+At startup the runtime reads the signed session parameters and opens the
+declared display/touch resources. The launcher presents a clear error when
+those capabilities cannot form a working session; it does not compare a model
+or device fingerprint.
 
 ## Data Flow
 

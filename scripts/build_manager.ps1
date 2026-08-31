@@ -2,9 +2,6 @@
 param(
     [switch]$Production,
     [string]$OfficialPublicKeyHex = "",
-    [string]$CertifiedProfileId = "",
-    [string]$CertifiedMachine = "",
-    [string]$DeviceIdentitySha256Hex = "",
     [string]$PlatformPackage = "",
     [string]$WslDistribution = "Ubuntu",
     [string]$NodeRoot = "",
@@ -35,15 +32,6 @@ if ($Production) {
         $OfficialPublicKeyHex -eq 'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a') {
         throw "The all-zero and RFC 8032 test public keys are forbidden"
     }
-    if ($CertifiedProfileId -notmatch '^[a-z0-9]+(?:[.-][a-z0-9]+)+$') {
-        throw "CertifiedProfileId is invalid"
-    }
-    if ($CertifiedMachine -notmatch '^[a-z0-9_+-]{2,32}$') {
-        throw "CertifiedMachine is invalid"
-    }
-    if ($DeviceIdentitySha256Hex -notmatch '^[0-9a-f]{64}$') {
-        throw "DeviceIdentitySha256Hex must be exactly 64 lowercase hexadecimal characters"
-    }
     if ([string]::IsNullOrWhiteSpace($PlatformPackage)) {
         throw "PlatformPackage is required for production builds"
     }
@@ -53,9 +41,6 @@ if ($Production) {
     }
     $environment += @(
         "OFFICIAL_PUBLIC_KEY_HEX=$OfficialPublicKeyHex",
-        "MANAGER_CERTIFIED_PROFILE_ID=$CertifiedProfileId",
-        "MANAGER_CERTIFIED_MACHINE=$CertifiedMachine",
-        "MANAGER_DEVICE_IDENTITY_SHA256_HEX=$DeviceIdentitySha256Hex",
         "MANAGER_PLATFORM_PACKAGE=$(Convert-ToWslPath -Path $payload)"
     )
 }

@@ -16,40 +16,27 @@ mkdir -p "$(dirname "$OUTPUT")" "$BUILD_DIR/generated/lvgl_platform"
 
 PRODUCTION="${MANAGER_PRODUCTION:-0}"
 PUBLIC_KEY="${OFFICIAL_PUBLIC_KEY_HEX:-}"
-PROFILE_ID="${MANAGER_CERTIFIED_PROFILE_ID:-}"
-MACHINE="${MANAGER_CERTIFIED_MACHINE:-}"
-IDENTITY_DIGEST="${MANAGER_DEVICE_IDENTITY_SHA256_HEX:-}"
 PAYLOAD="${MANAGER_PLATFORM_PACKAGE:-}"
 PAYLOAD_SOURCE="$ROOT/native/src/embedded_payload_unprovisioned.cpp"
 
 if [[ "$PRODUCTION" == "1" ]]; then
   test -n "$PUBLIC_KEY" || { echo "production manager requires OFFICIAL_PUBLIC_KEY_HEX" >&2; exit 3; }
-  test -n "$PROFILE_ID" || { echo "production manager requires MANAGER_CERTIFIED_PROFILE_ID" >&2; exit 3; }
-  test -n "$MACHINE" || { echo "production manager requires MANAGER_CERTIFIED_MACHINE" >&2; exit 3; }
-  test -n "$IDENTITY_DIGEST" || { echo "production manager requires MANAGER_DEVICE_IDENTITY_SHA256_HEX" >&2; exit 3; }
   test -n "$PAYLOAD" || { echo "production manager requires MANAGER_PLATFORM_PACKAGE" >&2; exit 3; }
 fi
 
-python3 - "$PRODUCTION" "$PUBLIC_KEY" "$PROFILE_ID" "$MACHINE" "$IDENTITY_DIGEST" \
-  "$PAYLOAD" "$BUILD_DIR/generated" <<'PY'
+python3 - "$PRODUCTION" "$PUBLIC_KEY" "$PAYLOAD" "$BUILD_DIR/generated" <<'PY'
 import os
 import pathlib
 import re
 import stat
 import sys
 
-production, key, profile, machine, identity, payload, output = sys.argv[1:]
+production, key, payload, output = sys.argv[1:]
 output = pathlib.Path(output)
 rfc_key = 'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a'
 if key and (not re.fullmatch(r'[0-9a-f]{64}', key) or key == '0' * 64 or key == rfc_key):
     raise SystemExit('official public key is malformed or forbidden')
-if profile and not re.fullmatch(r'[a-z0-9]+(?:[.-][a-z0-9]+)+', profile):
-    raise SystemExit('certified profile id is malformed')
-if machine and not re.fullmatch(r'[a-z0-9_+-]{2,32}', machine):
-    raise SystemExit('certified machine is malformed')
-if identity and not re.fullmatch(r'[0-9a-f]{64}', identity):
-    raise SystemExit('device identity digest is malformed')
-if production == '1' and (not key or not profile or not machine or not identity or not payload):
+if production == '1' and (not key or not payload):
     raise SystemExit('production manager provisioning is incomplete')
 
 (output / 'lvgl_platform' / 'official_key_config.h').write_text(
@@ -58,9 +45,6 @@ if production == '1' and (not key or not profile or not machine or not identity 
     '}  // namespace lvgl_platform\n', encoding='utf-8', newline='\n')
 (output / 'manager_build_config.h').write_text(
     '#pragma once\n#include <string_view>\nnamespace manager_build {\n'
-    f'inline constexpr std::string_view kCertifiedProfileId = "{profile}";\n'
-    f'inline constexpr std::string_view kCertifiedMachine = "{machine}";\n'
-    f'inline constexpr std::string_view kDeviceIdentitySha256Hex = "{identity}";\n'
     'inline constexpr std::string_view kPlatformVersion = "1.0.0";\n'
     'inline constexpr std::string_view kSdkAbi = "1.0";\n'
     '}  // namespace manager_build\n', encoding='utf-8', newline='\n')

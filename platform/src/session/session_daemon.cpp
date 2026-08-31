@@ -1325,14 +1325,14 @@ pid_t start_program(
             ::close(fd);
         }
     }
-    if(!apply_child_policy(policy)) _exit(125);
+    if(!profile.personal_unbound && !apply_child_policy(policy)) _exit(125);
     std::vector<std::string> environment {
         "PATH=/usr/sbin:/usr/bin:/sbin:/bin",
         "LVGL_SESSION_CONTROL_FD=" + std::to_string(control),
         "LVGL_TOUCH_FD=" + std::to_string(touch),
         "LVGL_DRM_FD=" + std::to_string(drm),
-        "LVGL_SANDBOX_REQUIRED=1",
-        "LVGL_APP_UID=" + std::to_string(policy.uid),
+        std::string("LVGL_SANDBOX_REQUIRED=") + (profile.personal_unbound ? "0" : "1"),
+        "LVGL_APP_UID=" + std::to_string(profile.personal_unbound ? 0 : policy.uid),
         "LVGL_LOGICAL_WIDTH=" + std::to_string(profile.logical_width),
         "LVGL_LOGICAL_HEIGHT=" + std::to_string(profile.logical_height),
         "LVGL_DRM_DEVICE=" + profile.drm_device,
@@ -1396,9 +1396,13 @@ FileDescriptor open_verified_program(
     std::string_view app_id, ProgramPolicy* policy = nullptr)
 {
     if(policy != nullptr) {
-        if(!application_uid_is_unique(app_id)) return {};
-        const auto uid = application_uid(app_id);
-        *policy = {{}, false, uid, static_cast<gid_t>(uid)};
+        if(profile.personal_unbound) {
+            *policy = {{}, false, 0, 0};
+        } else {
+            if(!application_uid_is_unique(app_id)) return {};
+            const auto uid = application_uid(app_id);
+            *policy = {{}, false, uid, static_cast<gid_t>(uid)};
+        }
     }
     if(!reserved_application_id(app_id)) {
         VerifiedApplication application;

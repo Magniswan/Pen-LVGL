@@ -19,7 +19,7 @@
 ## 安全原则
 
 - 唯一应用/平台信任根是编译进生产二进制的官方 Ed25519 发布公钥。
-- 私钥只允许在隔离的离线 signer 中使用；设备、AMR、仓库和普通 CI 均不持有私钥。
+- 商业发布私钥只允许在隔离的离线 signer 中使用；设备、AMR、仓库和普通 CI 均不持有私钥。个人无绑定发布的显式例外是所有者本机仓库外、受 NTFS ACL 保护的明文私钥，详见个人发布设计；它不具备商业密钥保护等级。
 - development 包带明确 dev flag 且永不可安装；改扩展名不能绕过。
 - payload 与双槽 anti-rollback policy 分根保存；卸载 payload 不清除高水位。
 - 固定目录、no-follow、owner/mode/nlink、canonical encoding、逐文件 hash 和启动前复验共同失败关闭。
@@ -67,7 +67,7 @@ cmake --build build/platform-aarch64 --target \
 ./scripts/build_manager.ps1 -NodeExecutable <node-18.20.8>
 ```
 
-生产 manager 还必须提供官方公钥、正式平台包、认证 profile/machine 与设备 identity；缺任一项即失败关闭。
+个人无绑定 manager 仍必须提供唯一官方公钥和正式已签名平台包；缺任一项即失败关闭。它不把设备 serial、机型、profile 或设备 identity 写入信任判断。
 
 ## 文档
 
@@ -82,4 +82,4 @@ cmake --build build/platform-aarch64 --target \
 
 ## 设备边界
 
-设备脚本只适用于已认证的 AArch64 有道词典笔，且全部强制提供精确 `-Serial` 和认证时记录的 `-ExpectedIdentitySha256`；任一不匹配都会在安装、卸载或状态读取前失败。当前附加的 Nexus 4 明确不在范围内，本工程不会对它执行任何设备操作。摘要参数防止操作员选错设备，不是 root-resistant attestation；生产 manager 仍独立使用内嵌 identity 和官方签名包失败关闭。
+设备脚本要求显式 `-Serial`，并把每条 ADB 命令固定到该 serial；serial 缺失、重复、offline 或 unauthorized 会在业务操作前失败。个人无绑定模式不把设备 identity、机型或 Falcon profile 作为 manager 的信任门禁。它仍只接受由内嵌官方 Ed25519 公钥验签的正式平台包；请仅在你本人已确认的设备上执行这些脚本。

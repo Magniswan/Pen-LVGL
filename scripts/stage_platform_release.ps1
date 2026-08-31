@@ -7,6 +7,7 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
     [Parameter(Mandatory)][ValidateRange(1, [long]::MaxValue)][long]$ReleaseCounter,
     [Parameter(Mandatory)][ValidateRange(0, [uint32]::MaxValue)][long]$SecurityEpoch,
+    [switch]$PersonalUnbound,
     [string]$WslDistribution = "Ubuntu",
     [string]$Node = "node"
 )
@@ -133,7 +134,7 @@ function Read-CertifiedReleaseProfile {
         'PROFILE_ID', 'MACHINE', 'LOGICAL_WIDTH', 'LOGICAL_HEIGHT', 'DRM_DEVICE',
         'DRM_CONNECTOR_ID', 'DRM_CRTC_ID', 'DRM_OVERLAY_PLANE_ID', 'DRM_OVERLAY_ZPOS',
         'DISPLAY_X', 'DISPLAY_Y', 'DISPLAY_WIDTH', 'DISPLAY_HEIGHT', 'PIXEL_FORMAT',
-        'DISPLAY_ROTATION', 'HOLE_SESSION_CERTIFIED'
+        'DISPLAY_ROTATION', 'HOLE_SESSION_CERTIFIED', 'PERSONAL_UNBOUND'
     )
     $values = @{}
     foreach ($line in $raw.Substring(0, $raw.Length - 1).Split("`n")) {
@@ -143,9 +144,13 @@ function Read-CertifiedReleaseProfile {
         }
         $values[$Matches[1]] = $Matches[2]
     }
-    if ($values.Count -ne $required.Count -or $values.HOLE_SESSION_CERTIFIED -ne '1' -or
+    if ($values.Count -ne $required.Count -or
         $values.PROFILE_ID -notmatch '^[a-z0-9]+(?:[.-][a-z0-9]+)+$' -or
-        $values.MACHINE -notmatch '^[a-z0-9_+-]{2,32}$') {
+        $values.MACHINE -notmatch '^[a-z0-9_+-]{2,32}$' -or
+        (($PersonalUnbound -and ($values.PERSONAL_UNBOUND -ne '1' -or
+                                  $values.HOLE_SESSION_CERTIFIED -ne '0')) -or
+         (-not $PersonalUnbound -and ($values.PERSONAL_UNBOUND -ne '0' -or
+                                      $values.HOLE_SESSION_CERTIFIED -ne '1')))) {
         throw "Profile is incomplete, uncertified, or has an invalid identity"
     }
     return $values
@@ -233,8 +238,8 @@ try {
         sdkAbi = '1.0'
         minPlatformVersion = '1.0.0'
         entry = 'bin/lvgl-sessiond'
-        supportedProfiles = @([string]$profile.PROFILE_ID)
-        supportedMachines = @([string]$profile.MACHINE)
+        supportedProfiles = @($(if ($PersonalUnbound) { 'personal-unbound' } else { [string]$profile.PROFILE_ID }))
+        supportedMachines = @($(if ($PersonalUnbound) { 'aarch64' } else { [string]$profile.MACHINE }))
         capabilities = @()
         limits = [ordered]@{ memoryMiB = 512; cpuSeconds = 86400; maxFiles = 64; dataMiB = 8 }
         onlinePolicy = [ordered]@{ mode = 'offline-v1' }
@@ -267,6 +272,7 @@ try {
         packageVersion = $Version
         releaseCounter = $ReleaseCounter
         securityEpoch = $SecurityEpoch
+        personalUnbound = $PersonalUnbound.IsPresent
         files = $files
     }
     [IO.File]::WriteAllText((Join-Path $artifact 'build-evidence.json'),

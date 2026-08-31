@@ -11,7 +11,6 @@
 #include <fcntl.h>
 #include <sys/random.h>
 #include <sys/stat.h>
-#include <sys/utsname.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -106,50 +105,6 @@ bool readTrustedFile(const char* path, std::size_t maximum, std::vector<std::uin
     }
     std::uint8_t trailing = 0;
     return read(input.get(), &trailing, 1) == 0;
-}
-
-std::string lowerHex(const lvgl_platform::Sha256Digest& digest)
-{
-    constexpr char digits[] = "0123456789abcdef";
-    std::string result;
-    result.reserve(digest.size() * 2);
-    for(const auto value : digest) {
-        result.push_back(digits[value >> 4U]);
-        result.push_back(digits[value & 0x0fU]);
-    }
-    return result;
-}
-
-bool deviceIdentityMatches(const lvgl_platform::CryptoProvider& crypto)
-{
-    if(manager_build::kDeviceIdentitySha256Hex.size() != 64) return false;
-    struct utsname identity {};
-    if(uname(&identity) != 0 || manager_build::kCertifiedMachine != identity.machine) return false;
-    std::vector<std::uint8_t> packages;
-    std::vector<std::uint8_t> screen;
-    if(!readTrustedFile("/etc/miniapp/resources/local_packages.json", 1024U * 1024U, packages) ||
-       !readTrustedFile("/etc/miniapp/resources/cfg.json", 64U * 1024U, screen)) {
-        return false;
-    }
-    std::vector<std::uint8_t> evidence;
-    const auto append = [&evidence](const void* bytes, std::size_t size) {
-        const auto* begin = static_cast<const std::uint8_t*>(bytes);
-        evidence.insert(evidence.end(), begin, begin + size);
-        evidence.push_back(0);
-    };
-    append(identity.machine, std::strlen(identity.machine));
-    append(packages.data(), packages.size());
-    append(screen.data(), screen.size());
-    lvgl_platform::Sha256Digest digest {};
-    return crypto.sha256(evidence.data(), evidence.size(), digest) &&
-           lowerHex(digest) == manager_build::kDeviceIdentitySha256Hex;
-}
-
-bool contains(const std::vector<std::string>& values, std::string_view expected)
-{
-    return std::find_if(values.begin(), values.end(), [expected](const std::string& value) {
-        return value == expected;
-    }) != values.end();
 }
 
 bool releaseDirectoryExists(std::uint64_t release) noexcept
@@ -294,36 +249,27 @@ Manager::~Manager() = default;
 bool Manager::verifyBuildAndPayload(
     ManagerSnapshot& snapshot, lvgl_platform::PackageVerification& verification)
 {
-    snapshot.profileId = std::string(manager_build::kCertifiedProfileId);
+    snapshot.profileId = "personal-unbound";
     snapshot.payloadAvailable = manager_embedded::kPlatformPackageSize > 0;
     if(!snapshot.payloadAvailable || crypto_ == nullptr ||
-       !lvgl_platform::OfficialTrustStore::compiled().configured() ||
-       manager_build::kCertifiedProfileId.empty() || manager_build::kCertifiedMachine.empty() ||
-       manager_build::kDeviceIdentitySha256Hex.empty()) {
+       !lvgl_platform::OfficialTrustStore::compiled().configured()) {
         snapshot.code = "MANAGER_BUILD_UNPROVISIONED";
-        snapshot.detail = "production trust root, signed payload, or certified device identity is absent";
+        snapshot.detail = "official trust root or signed platform payload is absent";
         return false;
     }
     verification = lvgl_platform::OfficialTrustStore::compiled().verify(
         manager_embedded::kPlatformPackage, manager_embedded::kPlatformPackageSize, *crypto_);
     if(!verification.ok() || verification.manifest.app_id != kPlatformAppId ||
-       verification.manifest.entry != "bin/lvgl-sessiond" ||
-       !contains(verification.manifest.supported_profiles, manager_build::kCertifiedProfileId) ||
-       !contains(verification.manifest.supported_machines, manager_build::kCertifiedMachine)) {
+       verification.manifest.entry != "bin/lvgl-sessiond") {
         snapshot.code = "MANAGER_PAYLOAD_REJECTED";
-        snapshot.detail = verification.detail.empty() ? "platform payload identity is invalid"
+        snapshot.detail = verification.detail.empty() ? "platform payload is invalid"
                                                        : verification.detail;
         return false;
     }
     snapshot.payloadVersion = verification.manifest.version;
-    if(!deviceIdentityMatches(*crypto_)) {
-        snapshot.code = "MANAGER_DEVICE_NOT_CERTIFIED";
-        snapshot.detail = "device identity fingerprint does not match this manager release";
-        return false;
-    }
     snapshot.available = true;
     snapshot.code = "MANAGER_READY";
-    snapshot.detail = "official payload and certified device identity verified";
+    snapshot.detail = "official payload verified for personal unbound use";
     return true;
 }
 
@@ -393,8 +339,7 @@ ManagerSnapshot Manager::installUnlocked(ManagerOperation operation)
     }
     const lvgl_platform::InstallPolicyContext context {
         std::string(manager_build::kPlatformVersion), std::string(manager_build::kSdkAbi),
-        std::string(manager_build::kCertifiedProfileId),
-        std::string(manager_build::kCertifiedMachine),
+        "", "",
         {"platform.display", "platform.input", "platform.install", "platform.session"}};
     const auto result = lvgl_platform::install_official_package_with_state_root(
         kPlatformRoot, kPolicyRoot, manager_embedded::kPlatformPackage,
@@ -422,7 +367,7 @@ ManagerSnapshot Manager::removeUnlocked()
     auto snapshot = inspectUnlocked();
     if(!snapshot.available) {
         snapshot.code = "MANAGER_REMOVE_UNAUTHORIZED";
-        snapshot.detail = "this manager build or device identity is not authorized for removal";
+        snapshot.detail = "this manager build is not authorized for removal";
         return snapshot;
     }
     if(!snapshot.installed) {

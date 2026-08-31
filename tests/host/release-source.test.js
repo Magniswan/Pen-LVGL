@@ -22,11 +22,22 @@ test('platform staging accepts only clean certified production inputs', () => {
   assert.match(source, /--clean-first --target[\s\S]*lvgl_sessiond[\s\S]*game_2048/);
   assert.match(source, /Source changed during the clean production rebuild/);
   assert.match(source, /exactly Node v18\.20\.8/);
-  assert.match(source, /HOLE_SESSION_CERTIFIED.*-ne '1'/s);
+  assert.match(source, /PERSONAL_UNBOUND/);
+  assert.match(source, /\[switch\]\$PersonalUnbound/);
   assert.match(source, /ELF64 little-endian AArch64/);
   assert.match(source, /ReparsePoint/);
   assert.match(source, /Refusing to overwrite release output/);
   assert.doesNotMatch(source, /PrivateKey|\bsign\b|adb(?:\.exe)?\b/i);
+});
+
+test('personal signer keeps plaintext private material outside the repository', () => {
+  const source = read('scripts/create_personal_official_signer.ps1');
+  assert.match(source, /plaintext-local-single-operator/);
+  assert.match(source, /privateKeyMaterialAccepted = \$true/);
+  assert.match(source, /generateKeyPairSync\('ed25519'\)/);
+  assert.match(source, /Personal signer root must stay outside the source repository/);
+  assert.match(source, /icacls\.exe/);
+  assert.doesNotMatch(source, /Write-Output.*privateKey/i);
 });
 
 test('platform staging emits deterministic handoff evidence', () => {

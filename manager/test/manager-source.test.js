@@ -67,17 +67,22 @@ test('removal is no-follow, bounded, isolated, and retains policy state', () => 
   assert.doesNotMatch(service, /removeContents\([^)]*kPolicyRoot/);
 });
 
-test('production native build fails closed without every provisioned input', () => {
+test('personal manager build still requires an official key and signed payload', () => {
   const build = read('tools/build-native.sh');
   [
     'OFFICIAL_PUBLIC_KEY_HEX',
-    'MANAGER_CERTIFIED_PROFILE_ID',
-    'MANAGER_CERTIFIED_MACHINE',
-    'MANAGER_DEVICE_IDENTITY_SHA256_HEX',
     'MANAGER_PLATFORM_PACKAGE',
   ].forEach((name) => assert.match(build, new RegExp(`requires ${name}`)));
+  assert.doesNotMatch(build, /MANAGER_CERTIFIED_PROFILE_ID|MANAGER_CERTIFIED_MACHINE|MANAGER_DEVICE_IDENTITY_SHA256_HEX/);
   assert.match(build, /key == '0' \* 64 or key == rfc_key/);
   assert.match(build, /stat\.S_ISREG/);
+});
+
+test('manager validates the signed payload without binding it to one device', () => {
+  const service = read('native/src/Manager/Manager.cpp');
+  assert.match(service, /personal-unbound/);
+  assert.match(service, /official payload verified for personal unbound use/);
+  assert.doesNotMatch(service, /deviceIdentityMatches|MANAGER_DEVICE_NOT_CERTIFIED|kCertifiedProfileId/);
 });
 
 test('host install scripts manage only the manager AMR', () => {

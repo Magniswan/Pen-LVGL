@@ -9,7 +9,7 @@ const sandbox = fs.readFileSync(
 const runtime = fs.readFileSync(
   path.join(root, 'src', 'runtime', 'platform_runtime.cpp'), 'utf8');
 
-test('mandatory AArch64 sandbox fails closed and installs a syscall filter', () => {
+test('sandbox installs a syscall filter when enabled and permits personal root mode', () => {
   assert.match(sandbox, /LVGL_SANDBOX_REQUIRED/);
   assert.match(sandbox, /mandatory runtime sandbox is unavailable/);
   assert.match(sandbox, /AUDIT_ARCH_AARCH64/);
@@ -17,6 +17,7 @@ test('mandatory AArch64 sandbox fails closed and installs a syscall filter', () 
   assert.match(sandbox, /PR_SET_SECCOMP/);
   assert.match(sandbox, /SECCOMP_MODE_FILTER/);
   assert.match(sandbox, /SECCOMP_RET_KILL_PROCESS/);
+  assert.match(sandbox, /strcmp\(marker, "0"\) == 0/);
   assert.match(runtime, /install_runtime_sandbox\(sandbox_error\)/);
 });
 

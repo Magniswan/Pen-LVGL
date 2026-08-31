@@ -57,48 +57,35 @@ stager 会核对 CMake home，从 cache 锁定 CMake 3.31.6/Ninja 1.12.1，并�
 
 ## Platform/manager release
 
-1. 真机认证 `profile.env`，记录 connector/CRTC/overlay/rotation/touch evidence。
+1. 为当前硬件准备 `profile.env`，记录 connector/CRTC/overlay/rotation/touch evidence；个人无绑定包使用 `PERSONAL_UNBOUND=1`。
 2. 以 `top.lvgl.platform` manifest 打包完整 platform release 并离线签名。
-3. 用 production 参数构建 manager native plugin，嵌入同一 signed platform bytes、official public key、profile/machine 和 device identity digest。
+3. 用 production 参数构建 manager native plugin，嵌入同一 signed platform bytes 与唯一 official public key；不得嵌入 serial、机型、profile 或 device identity digest。
 4. 用精确 Node 18.20.8 运行 `scripts/build_manager.ps1 -Production` 与 `scripts/build_launcher.ps1 -Production`；两者检查 `aiot-vue-cli 1.0.32`、AArch64 bridge、AMR 精确条目/manifest cert，规范化 ZIP metadata、再次验包并记录可复现 SHA-256。
 5. 在隔离的认证测试笔上执行 install/repair/upgrade/remove/crash/reboot/tamper/rollback matrix。
 6. 只有全门禁通过才发布 AMR；launcher 与 manager AppID 固定且相互独立。
 
-## Certified device operations
+## Personal unbound device operations
 
-认证阶段记录目标 ADB serial，并计算与 manager 完全相同的 identity：
-
-```text
-SHA-256(
-  UTF-8(uname.machine) || 00 ||
-  raw(/etc/miniapp/resources/local_packages.json) || 00 ||
-  raw(/etc/miniapp/resources/cfg.json) || 00
-)
-```
-
-把该摘要同时用于 production manager 的 `DeviceIdentitySha256Hex` 和 host 脚本的 `-ExpectedIdentitySha256`。脚本要求目标固件提供 `base64`，以不经过文本换行转换的方式读取两份 evidence。示例中的值必须来自认证记录，不能现场从未知设备读取后直接回填：
+个人模式不计算或保存设备 identity digest。每个操作都要求精确的 ADB serial，所有实际 ADB 调用均使用 `-s <serial>`：
 
 ```powershell
 .\scripts\install_manager.ps1 `
-  -Serial <certified-adb-serial> `
-  -ExpectedIdentitySha256 <certified-64-hex-digest>
+  -Serial <adb-serial>
 
 .\scripts\install_device_app.ps1 `
-  -Serial <certified-adb-serial> `
-  -ExpectedIdentitySha256 <certified-64-hex-digest>
+  -Serial <adb-serial>
 
 .\scripts\status_device_app.ps1 `
-  -Serial <certified-adb-serial> `
-  -ExpectedIdentitySha256 <certified-64-hex-digest>
+  -Serial <adb-serial>
 ```
 
-卸载脚本具有相同两个必填参数，另保留 PowerShell 高风险确认。允许同时连接多个设备，因为实际业务命令始终携带 `-s`；serial 缺失、重复、offline/unauthorized、identity 不同、evidence 缺失或 base64 无效都会在业务操作前失败。
+卸载脚本具有相同的 serial 必填参数，另保留 PowerShell 高风险确认。允许同时连接多个设备，因为实际业务命令始终携带 `-s`；serial 缺失、重复、offline 或 unauthorized 会在业务操作前失败。
 
-这是操作安全门禁，不是信任根。能伪造 ADB 输出的 root 对手可以冒充摘要；正式安全判断由 manager 内嵌认证 identity、唯一官方 Ed25519 公钥、已签平台包和设备可信启动链共同完成。官方签名的 host release authorization/硬件 attestation 仍在 P0 代办中。
+serial 只是操作员选择目标的防呆，不是信任根。个人模式的正式安全判断仅由 manager 内嵌的唯一官方 Ed25519 公钥及已签平台包完成；它不是硬件 attestation，也不面向多人或商业分发。
 
 ## Fail-closed gates
 
-以下任一发生就停止发布：Git 不干净或 source commit 不符；build cache 不属于当前 source；clean rebuild 失败；缺官方 public key/payload/identity；profile 未认证；dev flag；测试 key；counter 冲突；reviewer SHA-512 不一致；Node 版本不符；非可复现 bytes；ELF ABI/NEEDED 不匹配；AMR 有额外/缺失条目；测试失败；signer/verifier key ID 不一致。
+以下任一发生就停止发布：Git 不干净或 source commit 不符；build cache 不属于当前 source；clean rebuild 失败；缺官方 public key/payload；个人 profile 配置不完整；dev flag；测试 key；counter 冲突；Node 版本不符；非可复现 bytes；ELF ABI/NEEDED 不匹配；AMR 有额外/缺失条目；测试失败；signer/verifier key ID 不一致。
 
 ## Private key rules
 

@@ -186,6 +186,7 @@ bool install_runtime_sandbox(std::string& error)
 {
     const char* marker = std::getenv("LVGL_SANDBOX_REQUIRED");
     if(marker == nullptr) return true;
+    if(std::strcmp(marker, "0") == 0) return true;
     if(std::strcmp(marker, "1") != 0) {
         error = "invalid LVGL_SANDBOX_REQUIRED marker";
         return false;

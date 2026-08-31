@@ -10,10 +10,18 @@
 
 不要在报告中附带官方私钥、设备密钥或未脱敏的生产 identity。
 
+## Personal unbound exception
+
+所有者已明确批准一个仅供本人使用的例外：`scripts/create_personal_official_signer.ps1`
+可以在仓库外的本机目录创建明文 Ed25519 私钥，并使用 NTFS ACL 限制为当前
+Windows 账户与 `SYSTEM`。该例外仍禁止把私钥放入仓库、AMR、设备、日志、CI 或
+云端/自动备份；它不符合商业发布的 HSM、多人见证或硬件认证要求。个人发布只保留
+单一官方公钥验签，不绑定设备 identity、机型或 profile，且 root 应用不受沙箱限制。
+
 ## Key compromise response
 
 1. 停止所有签名和发布。
-2. 保存 signer/audit evidence，不在普通开发机复制私钥。
+2. 保存 signer/audit evidence；个人明文私钥应从受影响主机移除或隔离，不在其他机器复制。
 3. 生成新离线 key hierarchy；提升受影响应用的 `securityEpoch`。
 4. 构建只信任新公钥的平台/manager，并通过受控固件更新部署。
 5. 复核所有旧 counter/epoch high-water 与设备恢复路径。

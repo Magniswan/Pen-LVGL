@@ -63,8 +63,8 @@ InstallPolicyDecision evaluate_install_policy(
             InstallPolicyStatus::package_not_authenticated, "POLICY_PACKAGE_NOT_AUTHENTICATED");
     }
     const auto& manifest = candidate.manifest;
-    if(context.platform_version.empty() || context.sdk_abi.empty() || context.profile_id.empty() ||
-       context.machine.empty() || manifest.app_id.empty() || manifest.release_counter == 0) {
+    if(context.platform_version.empty() || context.sdk_abi.empty() || manifest.app_id.empty() ||
+       manifest.release_counter == 0) {
         return decision(InstallPolicyStatus::invalid_policy_input, "POLICY_INPUT_INVALID");
     }
     if(manifest.sdk_abi != context.sdk_abi) {
@@ -73,10 +73,10 @@ InstallPolicyDecision evaluate_install_policy(
     if(!version_at_least(context.platform_version, manifest.minimum_platform_version)) {
         return decision(InstallPolicyStatus::platform_too_old, "POLICY_PLATFORM_TOO_OLD");
     }
-    if(!contains(manifest.supported_profiles, context.profile_id)) {
+    if(!context.profile_id.empty() && !contains(manifest.supported_profiles, context.profile_id)) {
         return decision(InstallPolicyStatus::unsupported_profile, "POLICY_PROFILE_UNSUPPORTED");
     }
-    if(!contains(manifest.supported_machines, context.machine)) {
+    if(!context.machine.empty() && !contains(manifest.supported_machines, context.machine)) {
         return decision(InstallPolicyStatus::unsupported_machine, "POLICY_MACHINE_UNSUPPORTED");
     }
     for(const auto& capability : manifest.capabilities) {
